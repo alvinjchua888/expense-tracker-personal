@@ -8,10 +8,12 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { CategoryBadge } from "./CategoryBadge";
 import { format } from "date-fns";
+import { CURRENCY_SYMBOLS, type Currency } from "@shared/schema";
 
 export interface Expense {
   id: string;
   amount: number;
+  currency: Currency;
   description: string;
   category: string;
   merchant: string;
@@ -48,7 +50,7 @@ export function ExpenseItem({ expense, onEdit, onDelete }: ExpenseItemProps) {
       <div className="flex items-center gap-4">
         <div className="text-right">
           <p className="font-semibold tabular-nums">
-            ${expense.amount.toFixed(2)}
+            {CURRENCY_SYMBOLS[expense.currency]}{expense.amount.toFixed(2)}
           </p>
           <p className="text-xs text-muted-foreground">
             {format(expense.date, "MMM d, yyyy")}
