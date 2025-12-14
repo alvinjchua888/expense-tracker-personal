@@ -7,9 +7,23 @@ import {
 import { db } from "./db";
 import { eq, desc, gte, lte, and, sql } from "drizzle-orm";
 
+const DEFAULT_CATEGORIES = [
+  { name: "Groceries", icon: "ShoppingCart" },
+  { name: "Food", icon: "Utensils" },
+  { name: "Transport", icon: "Car" },
+  { name: "Housing", icon: "Home" },
+  { name: "Utilities", icon: "Zap" },
+  { name: "Entertainment", icon: "Film" },
+  { name: "Health", icon: "Heart" },
+  { name: "Education", icon: "GraduationCap" },
+  { name: "Travel", icon: "Plane" },
+  { name: "Other", icon: "MoreHorizontal" },
+];
+
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   upsertUser(user: UpsertUser): Promise<User>;
+  seedDefaultCategories(userId: string): Promise<void>;
   
   getCategories(userId: string): Promise<Category[]>;
   getCategory(id: number, userId: string): Promise<Category | undefined>;
@@ -46,6 +60,18 @@ export class DatabaseStorage implements IStorage {
       })
       .returning();
     return user;
+  }
+
+  async seedDefaultCategories(userId: string): Promise<void> {
+    const existingCategories = await this.getCategories(userId);
+    if (existingCategories.length === 0) {
+      const categoriesToInsert = DEFAULT_CATEGORIES.map(cat => ({
+        name: cat.name,
+        icon: cat.icon,
+        userId,
+      }));
+      await db.insert(categories).values(categoriesToInsert);
+    }
   }
 
   async getCategories(userId: string): Promise<Category[]> {
