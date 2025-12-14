@@ -46,7 +46,7 @@ export const insertCategorySchema = createInsertSchema(categories).omit({
 export type InsertCategory = z.infer<typeof insertCategorySchema>;
 export type Category = typeof categories.$inferSelect;
 
-export const CURRENCIES = ["USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CHF", "CNY", "INR", "MXN"] as const;
+export const CURRENCIES = ["USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CHF", "CNY", "INR", "MXN", "PHP"] as const;
 export type Currency = typeof CURRENCIES[number];
 
 export const CURRENCY_SYMBOLS: Record<Currency, string> = {
@@ -60,6 +60,7 @@ export const CURRENCY_SYMBOLS: Record<Currency, string> = {
   CNY: "¥",
   INR: "₹",
   MXN: "$",
+  PHP: "₱",
 };
 
 export const expenses = pgTable("expenses", {
