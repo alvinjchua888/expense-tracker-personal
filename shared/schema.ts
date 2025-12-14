@@ -46,9 +46,26 @@ export const insertCategorySchema = createInsertSchema(categories).omit({
 export type InsertCategory = z.infer<typeof insertCategorySchema>;
 export type Category = typeof categories.$inferSelect;
 
+export const CURRENCIES = ["USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CHF", "CNY", "INR", "MXN"] as const;
+export type Currency = typeof CURRENCIES[number];
+
+export const CURRENCY_SYMBOLS: Record<Currency, string> = {
+  USD: "$",
+  EUR: "€",
+  GBP: "£",
+  JPY: "¥",
+  CAD: "C$",
+  AUD: "A$",
+  CHF: "Fr",
+  CNY: "¥",
+  INR: "₹",
+  MXN: "$",
+};
+
 export const expenses = pgTable("expenses", {
   id: serial("id").primaryKey(),
   amount: real("amount").notNull(),
+  currency: varchar("currency", { length: 3 }).notNull().default("USD"),
   description: text("description"),
   merchant: text("merchant").notNull(),
   categoryId: integer("category_id").references(() => categories.id),

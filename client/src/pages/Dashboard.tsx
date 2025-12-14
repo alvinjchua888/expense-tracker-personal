@@ -6,11 +6,12 @@ import { ExpenseForm } from "@/components/ExpenseForm";
 import { ReceiptUpload } from "@/components/ReceiptUpload";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { Expense as DbExpense, Category } from "@shared/schema";
+import { CURRENCY_SYMBOLS, type Currency, type Expense as DbExpense, type Category } from "@shared/schema";
 
 interface Expense {
   id: string;
   amount: number;
+  currency: Currency;
   description: string;
   category: string;
   merchant: string;
@@ -28,7 +29,7 @@ export default function Dashboard() {
   });
 
   const createExpenseMutation = useMutation({
-    mutationFn: async (data: { amount: number; merchant: string; description?: string; categoryId?: number; date: Date }) => {
+    mutationFn: async (data: { amount: number; currency: string; merchant: string; description?: string; categoryId?: number; date: Date }) => {
       return apiRequest("POST", "/api/expenses", data);
     },
     onSuccess: () => {
@@ -50,6 +51,7 @@ export default function Dashboard() {
   const expenses: Expense[] = dbExpenses.map(e => ({
     id: e.id.toString(),
     amount: e.amount,
+    currency: (e.currency || "USD") as Currency,
     description: e.description || "",
     category: categoryMap.get(e.categoryId || 0) || "Other",
     merchant: e.merchant,
@@ -57,6 +59,17 @@ export default function Dashboard() {
     hasReceipt: e.hasReceipt || false,
   }));
 
+  const primaryCurrency = expenses.length > 0 
+    ? (expenses.reduce((acc, e) => {
+        acc[e.currency] = (acc[e.currency] || 0) + 1;
+        return acc;
+      }, {} as Record<Currency, number>))
+    : null;
+  const mostUsedCurrency = primaryCurrency 
+    ? (Object.entries(primaryCurrency).sort((a, b) => b[1] - a[1])[0]?.[0] as Currency) || "USD"
+    : "USD";
+  const currencySymbol = CURRENCY_SYMBOLS[mostUsedCurrency];
+  
   const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
   const thisMonth = expenses
     .filter((e) => {
@@ -71,10 +84,11 @@ export default function Dashboard() {
     })
     .reduce((sum, e) => sum + e.amount, 0);
 
-  const handleAddExpense = (data: { amount: string; merchant: string; description?: string; category: string; date: Date }) => {
+  const handleAddExpense = (data: { amount: string; currency: string; merchant: string; description?: string; category: string; date: Date }) => {
     const categoryId = categories.find(c => c.name.toLowerCase() === data.category.toLowerCase())?.id;
     createExpenseMutation.mutate({
       amount: parseFloat(data.amount),
+      currency: data.currency,
       merchant: data.merchant,
       description: data.description,
       categoryId,
@@ -88,6 +102,7 @@ export default function Dashboard() {
     )?.id;
     createExpenseMutation.mutate({
       amount: parseFloat(data.amount || "0"),
+      currency: "USD",
       merchant: data.merchant || "Unknown",
       description: "Scanned from receipt",
       categoryId,
@@ -124,22 +139,22 @@ export default function Dashboard() {
           <>
             <StatCard
               title="Total Expenses"
-              value={`$${totalExpenses.toFixed(2)}`}
+              value={`${currencySymbol}${totalExpenses.toFixed(2)}`}
               icon={<DollarSign className="h-6 w-6" />}
             />
             <StatCard
               title="This Month"
-              value={`$${thisMonth.toFixed(2)}`}
+              value={`${currencySymbol}${thisMonth.toFixed(2)}`}
               icon={<Calendar className="h-6 w-6" />}
             />
             <StatCard
               title="This Week"
-              value={`$${thisWeek.toFixed(2)}`}
+              value={`${currencySymbol}${thisWeek.toFixed(2)}`}
               icon={<Wallet className="h-6 w-6" />}
             />
             <StatCard
               title="Avg. Daily"
-              value={`$${(thisMonth / 30).toFixed(2)}`}
+              value={`${currencySymbol}${(thisMonth / 30).toFixed(2)}`}
               icon={<TrendingUp className="h-6 w-6" />}
             />
           </>

@@ -36,12 +36,14 @@ import {
 import { CalendarIcon, Plus } from "lucide-react";
 import { format } from "date-fns";
 import { defaultCategories } from "./CategoryBadge";
+import { CURRENCIES, CURRENCY_SYMBOLS, type Currency } from "@shared/schema";
 
 const expenseSchema = z.object({
   amount: z.string().min(1, "Amount is required").refine(
     (val) => !isNaN(parseFloat(val)) && parseFloat(val) > 0,
     "Amount must be positive"
   ),
+  currency: z.string().min(1, "Currency is required"),
   merchant: z.string().min(1, "Merchant is required"),
   description: z.string().optional(),
   category: z.string().min(1, "Category is required"),
@@ -63,6 +65,7 @@ export function ExpenseForm({ onSubmit, trigger, defaultValues }: ExpenseFormPro
     resolver: zodResolver(expenseSchema),
     defaultValues: {
       amount: defaultValues?.amount || "",
+      currency: defaultValues?.currency || "USD",
       merchant: defaultValues?.merchant || "",
       description: defaultValues?.description || "",
       category: defaultValues?.category || "",
@@ -73,7 +76,14 @@ export function ExpenseForm({ onSubmit, trigger, defaultValues }: ExpenseFormPro
   const handleSubmit = (data: ExpenseFormValues) => {
     console.log("Form submitted:", data);
     onSubmit?.(data);
-    form.reset();
+    form.reset({
+      amount: "",
+      currency: "USD",
+      merchant: "",
+      description: "",
+      category: "",
+      date: new Date(),
+    });
     setOpen(false);
   };
 
@@ -99,16 +109,39 @@ export function ExpenseForm({ onSubmit, trigger, defaultValues }: ExpenseFormPro
                 name="amount"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Amount ($)</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        placeholder="0.00"
-                        {...field}
-                        data-testid="input-expense-amount"
+                    <FormLabel>Amount</FormLabel>
+                    <div className="flex gap-2">
+                      <FormField
+                        control={form.control}
+                        name="currency"
+                        render={({ field: currencyField }) => (
+                          <Select onValueChange={currencyField.onChange} value={currencyField.value}>
+                            <FormControl>
+                              <SelectTrigger className="w-24" data-testid="select-expense-currency">
+                                <SelectValue placeholder="USD" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {CURRENCIES.map((currency) => (
+                                <SelectItem key={currency} value={currency}>
+                                  {CURRENCY_SYMBOLS[currency]} {currency}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
                       />
-                    </FormControl>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          placeholder="0.00"
+                          {...field}
+                          className="flex-1"
+                          data-testid="input-expense-amount"
+                        />
+                      </FormControl>
+                    </div>
                     <FormMessage />
                   </FormItem>
                 )}

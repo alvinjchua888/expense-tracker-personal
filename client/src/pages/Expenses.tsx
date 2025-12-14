@@ -6,12 +6,13 @@ import { ReceiptUpload } from "@/components/ReceiptUpload";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { Expense as DbExpense, Category } from "@shared/schema";
+import type { Expense as DbExpense, Category, Currency } from "@shared/schema";
 import type { DateRange } from "react-day-picker";
 
 interface Expense {
   id: string;
   amount: number;
+  currency: Currency;
   description: string;
   category: string;
   merchant: string;
@@ -42,7 +43,7 @@ export default function Expenses() {
   });
 
   const createExpenseMutation = useMutation({
-    mutationFn: async (data: { amount: number; merchant: string; description?: string; categoryId?: number; date: Date }) => {
+    mutationFn: async (data: { amount: number; currency: string; merchant: string; description?: string; categoryId?: number; date: Date }) => {
       return apiRequest("POST", "/api/expenses", data);
     },
     onSuccess: () => {
@@ -64,6 +65,7 @@ export default function Expenses() {
   const expenses: Expense[] = dbExpenses.map(e => ({
     id: e.id.toString(),
     amount: e.amount,
+    currency: (e.currency || "USD") as Currency,
     description: e.description || "",
     category: categoryMap.get(e.categoryId || 0) || "Other",
     merchant: e.merchant,
@@ -71,10 +73,11 @@ export default function Expenses() {
     hasReceipt: e.hasReceipt || false,
   }));
 
-  const handleAddExpense = (data: { amount: string; merchant: string; description?: string; category: string; date: Date }) => {
+  const handleAddExpense = (data: { amount: string; currency: string; merchant: string; description?: string; category: string; date: Date }) => {
     const categoryId = categories.find(c => c.name.toLowerCase() === data.category.toLowerCase())?.id;
     createExpenseMutation.mutate({
       amount: parseFloat(data.amount),
+      currency: data.currency,
       merchant: data.merchant,
       description: data.description,
       categoryId,
@@ -88,6 +91,7 @@ export default function Expenses() {
     )?.id;
     createExpenseMutation.mutate({
       amount: parseFloat(data.amount || "0"),
+      currency: "USD",
       merchant: data.merchant || "Unknown",
       description: "Scanned from receipt",
       categoryId,
