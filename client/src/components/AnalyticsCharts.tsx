@@ -139,7 +139,7 @@ export function CategoryPieChart({ data, title = "Spending by Category" }: Categ
                 />
                 <span className="flex-1 capitalize truncate">{item.name}</span>
                 <span className="font-medium tabular-nums">
-                  {((item.value / total) * 100).toFixed(0)}%
+                  {total > 0 ? ((item.value / total) * 100).toFixed(0) : 0}%
                 </span>
               </div>
             ))}

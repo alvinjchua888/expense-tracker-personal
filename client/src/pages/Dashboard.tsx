@@ -1,23 +1,61 @@
-import { useState } from "react";
 import { DollarSign, Calendar, Wallet, TrendingUp } from "lucide-react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { StatCard } from "@/components/StatCard";
 import { ExpenseList } from "@/components/ExpenseList";
 import { ExpenseForm } from "@/components/ExpenseForm";
 import { ReceiptUpload } from "@/components/ReceiptUpload";
-import type { Expense } from "@/components/ExpenseItem";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { Skeleton } from "@/components/ui/skeleton";
+import type { Expense as DbExpense, Category } from "@shared/schema";
 
-// todo: remove mock functionality
-const initialExpenses: Expense[] = [
-  { id: "1", amount: 45.99, description: "Weekly groceries", category: "groceries", merchant: "Whole Foods", date: new Date(), hasReceipt: true },
-  { id: "2", amount: 12.50, description: "Lunch with team", category: "food", merchant: "Chipotle", date: new Date(Date.now() - 86400000) },
-  { id: "3", amount: 35.00, description: "Gas refill", category: "transport", merchant: "Shell", date: new Date(Date.now() - 172800000), hasReceipt: true },
-  { id: "4", amount: 150.00, description: "Monthly electric bill", category: "utilities", merchant: "PG&E", date: new Date(Date.now() - 259200000) },
-  { id: "5", amount: 25.00, description: "Movie night", category: "entertainment", merchant: "AMC Theaters", date: new Date(Date.now() - 345600000) },
-  { id: "6", amount: 89.99, description: "Prescription medication", category: "health", merchant: "CVS Pharmacy", date: new Date(Date.now() - 432000000), hasReceipt: true },
-];
+interface Expense {
+  id: string;
+  amount: number;
+  description: string;
+  category: string;
+  merchant: string;
+  date: Date;
+  hasReceipt?: boolean;
+}
 
 export default function Dashboard() {
-  const [expenses, setExpenses] = useState<Expense[]>(initialExpenses);
+  const { data: dbExpenses = [], isLoading: expensesLoading } = useQuery<DbExpense[]>({
+    queryKey: ["/api/expenses"],
+  });
+
+  const { data: categories = [] } = useQuery<Category[]>({
+    queryKey: ["/api/categories"],
+  });
+
+  const createExpenseMutation = useMutation({
+    mutationFn: async (data: { amount: number; merchant: string; description?: string; categoryId?: number; date: Date }) => {
+      return apiRequest("POST", "/api/expenses", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/expenses"] });
+    },
+  });
+
+  const deleteExpenseMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return apiRequest("DELETE", `/api/expenses/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/expenses"] });
+    },
+  });
+
+  const categoryMap = new Map(categories.map(c => [c.id, c.name]));
+
+  const expenses: Expense[] = dbExpenses.map(e => ({
+    id: e.id.toString(),
+    amount: e.amount,
+    description: e.description || "",
+    category: categoryMap.get(e.categoryId || 0) || "Other",
+    merchant: e.merchant,
+    date: new Date(e.date),
+    hasReceipt: e.hasReceipt || false,
+  }));
 
   const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
   const thisMonth = expenses
@@ -34,32 +72,31 @@ export default function Dashboard() {
     .reduce((sum, e) => sum + e.amount, 0);
 
   const handleAddExpense = (data: { amount: string; merchant: string; description?: string; category: string; date: Date }) => {
-    const newExpense: Expense = {
-      id: Date.now().toString(),
+    const categoryId = categories.find(c => c.name.toLowerCase() === data.category.toLowerCase())?.id;
+    createExpenseMutation.mutate({
       amount: parseFloat(data.amount),
       merchant: data.merchant,
-      description: data.description || "",
-      category: data.category,
+      description: data.description,
+      categoryId,
       date: data.date,
-    };
-    setExpenses((prev) => [newExpense, ...prev]);
+    });
   };
 
-  const handleReceiptData = (data: { merchant?: string; amount?: string; date?: string }) => {
-    const newExpense: Expense = {
-      id: Date.now().toString(),
+  const handleReceiptData = (data: { merchant?: string; amount?: string; date?: string; suggestedCategory?: string }) => {
+    const categoryId = categories.find(c => 
+      c.name.toLowerCase() === (data.suggestedCategory || "").toLowerCase()
+    )?.id;
+    createExpenseMutation.mutate({
       amount: parseFloat(data.amount || "0"),
       merchant: data.merchant || "Unknown",
       description: "Scanned from receipt",
-      category: "groceries",
+      categoryId,
       date: data.date ? new Date(data.date) : new Date(),
-      hasReceipt: true,
-    };
-    setExpenses((prev) => [newExpense, ...prev]);
+    });
   };
 
   const handleDeleteExpense = (id: string) => {
-    setExpenses((prev) => prev.filter((e) => e.id !== id));
+    deleteExpenseMutation.mutate(id);
   };
 
   return (
@@ -76,36 +113,52 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          title="Total Expenses"
-          value={`$${totalExpenses.toFixed(2)}`}
-          trend={{ value: 12.5, isPositive: false }}
-          icon={<DollarSign className="h-6 w-6" />}
-        />
-        <StatCard
-          title="This Month"
-          value={`$${thisMonth.toFixed(2)}`}
-          trend={{ value: 8.2, isPositive: true }}
-          icon={<Calendar className="h-6 w-6" />}
-        />
-        <StatCard
-          title="This Week"
-          value={`$${thisWeek.toFixed(2)}`}
-          icon={<Wallet className="h-6 w-6" />}
-        />
-        <StatCard
-          title="Avg. Daily"
-          value={`$${(thisMonth / 30).toFixed(2)}`}
-          trend={{ value: 3.1, isPositive: false }}
-          icon={<TrendingUp className="h-6 w-6" />}
-        />
+        {expensesLoading ? (
+          <>
+            <Skeleton className="h-32" />
+            <Skeleton className="h-32" />
+            <Skeleton className="h-32" />
+            <Skeleton className="h-32" />
+          </>
+        ) : (
+          <>
+            <StatCard
+              title="Total Expenses"
+              value={`$${totalExpenses.toFixed(2)}`}
+              icon={<DollarSign className="h-6 w-6" />}
+            />
+            <StatCard
+              title="This Month"
+              value={`$${thisMonth.toFixed(2)}`}
+              icon={<Calendar className="h-6 w-6" />}
+            />
+            <StatCard
+              title="This Week"
+              value={`$${thisWeek.toFixed(2)}`}
+              icon={<Wallet className="h-6 w-6" />}
+            />
+            <StatCard
+              title="Avg. Daily"
+              value={`$${(thisMonth / 30).toFixed(2)}`}
+              icon={<TrendingUp className="h-6 w-6" />}
+            />
+          </>
+        )}
       </div>
 
-      <ExpenseList
-        expenses={expenses}
-        onDelete={handleDeleteExpense}
-        onEdit={(e) => console.log("Edit expense:", e)}
-      />
+      {expensesLoading ? (
+        <div className="space-y-2">
+          <Skeleton className="h-16" />
+          <Skeleton className="h-16" />
+          <Skeleton className="h-16" />
+        </div>
+      ) : (
+        <ExpenseList
+          expenses={expenses}
+          onDelete={handleDeleteExpense}
+          onEdit={(e) => console.log("Edit expense:", e)}
+        />
+      )}
     </div>
   );
 }
