@@ -11,7 +11,10 @@ import {
   SidebarHeader,
   SidebarFooter,
 } from "@/components/ui/sidebar";
-import { LayoutDashboard, Receipt, BarChart3, Tag, Wallet } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import { useAuth } from "@/hooks/useAuth";
+import { LayoutDashboard, Receipt, BarChart3, Tag, Wallet, LogOut } from "lucide-react";
 
 const menuItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
@@ -22,6 +25,15 @@ const menuItems = [
 
 export function AppSidebar() {
   const [location] = useLocation();
+  const { user } = useAuth();
+
+  const displayName = user?.firstName && user?.lastName 
+    ? `${user.firstName} ${user.lastName}`
+    : user?.email || "User";
+  
+  const initials = user?.firstName && user?.lastName
+    ? `${user.firstName[0]}${user.lastName[0]}`
+    : user?.email?.[0]?.toUpperCase() || "U";
 
   return (
     <Sidebar>
@@ -60,9 +72,24 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter className="p-4">
-        <div className="text-xs text-muted-foreground text-center">
-          Track smarter, spend wiser
+        <div className="flex items-center gap-3 mb-3">
+          <Avatar className="h-9 w-9">
+            <AvatarImage src={user?.profileImageUrl || undefined} alt={displayName} className="object-cover" />
+            <AvatarFallback>{initials}</AvatarFallback>
+          </Avatar>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium truncate" data-testid="text-username">{displayName}</p>
+            {user?.email && (
+              <p className="text-xs text-muted-foreground truncate" data-testid="text-email">{user.email}</p>
+            )}
+          </div>
         </div>
+        <Button variant="outline" size="sm" className="w-full" asChild data-testid="button-logout">
+          <a href="/api/logout">
+            <LogOut className="h-4 w-4 mr-2" />
+            Sign Out
+          </a>
+        </Button>
       </SidebarFooter>
     </Sidebar>
   );
