@@ -1,39 +1,71 @@
-import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { CategoryManagement } from "@/components/CategoryManagement";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { Skeleton } from "@/components/ui/skeleton";
+import type { Category } from "@shared/schema";
 
-// todo: remove mock functionality
-const initialCategories = [
-  { id: "1", name: "Groceries", icon: "Shopping", totalSpent: 450.00 },
-  { id: "2", name: "Dining Out", icon: "Food", totalSpent: 320.50 },
-  { id: "3", name: "Transport", icon: "Transport", totalSpent: 280.00 },
-  { id: "4", name: "Housing", icon: "Home", totalSpent: 1500.00 },
-  { id: "5", name: "Utilities", icon: "Utilities", totalSpent: 180.00 },
-  { id: "6", name: "Entertainment", icon: "Entertainment", totalSpent: 120.00 },
-  { id: "7", name: "Healthcare", icon: "Health", totalSpent: 95.00 },
-  { id: "8", name: "Education", icon: "Education", totalSpent: 250.00 },
-];
+interface CategoryWithSpending {
+  id: string;
+  name: string;
+  icon: string;
+  totalSpent: number;
+}
 
 export default function Categories() {
-  const [categories, setCategories] = useState(initialCategories);
+  const { data: dbCategories = [], isLoading: categoriesLoading } = useQuery<Category[]>({
+    queryKey: ["/api/categories"],
+  });
+
+  const { data: categorySpending = [] } = useQuery<{ categoryId: number; name: string; total: number }[]>({
+    queryKey: ["/api/analytics/category-spending"],
+  });
+
+  const createCategoryMutation = useMutation({
+    mutationFn: async (data: { name: string; icon: string }) => {
+      return apiRequest("POST", "/api/categories", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/categories"] });
+    },
+  });
+
+  const updateCategoryMutation = useMutation({
+    mutationFn: async ({ id, name, icon }: { id: string; name: string; icon: string }) => {
+      return apiRequest("PUT", `/api/categories/${id}`, { name, icon });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/categories"] });
+    },
+  });
+
+  const deleteCategoryMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return apiRequest("DELETE", `/api/categories/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/categories"] });
+    },
+  });
+
+  const spendingMap = new Map(categorySpending.map(s => [s.categoryId, s.total]));
+
+  const categories: CategoryWithSpending[] = dbCategories.map(c => ({
+    id: c.id.toString(),
+    name: c.name,
+    icon: c.icon,
+    totalSpent: Number(spendingMap.get(c.id) || 0),
+  }));
 
   const handleAddCategory = (name: string, icon: string) => {
-    const newCategory = {
-      id: Date.now().toString(),
-      name,
-      icon,
-      totalSpent: 0,
-    };
-    setCategories((prev) => [...prev, newCategory]);
+    createCategoryMutation.mutate({ name, icon });
   };
 
   const handleEditCategory = (id: string, name: string, icon: string) => {
-    setCategories((prev) =>
-      prev.map((cat) => (cat.id === id ? { ...cat, name, icon } : cat))
-    );
+    updateCategoryMutation.mutate({ id, name, icon });
   };
 
   const handleDeleteCategory = (id: string) => {
-    setCategories((prev) => prev.filter((cat) => cat.id !== id));
+    deleteCategoryMutation.mutate(id);
   };
 
   return (
@@ -45,12 +77,16 @@ export default function Categories() {
         </p>
       </div>
 
-      <CategoryManagement
-        categories={categories}
-        onAdd={handleAddCategory}
-        onEdit={handleEditCategory}
-        onDelete={handleDeleteCategory}
-      />
+      {categoriesLoading ? (
+        <Skeleton className="h-64" />
+      ) : (
+        <CategoryManagement
+          categories={categories}
+          onAdd={handleAddCategory}
+          onEdit={handleEditCategory}
+          onDelete={handleDeleteCategory}
+        />
+      )}
     </div>
   );
 }

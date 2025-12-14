@@ -11,12 +11,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Upload, Camera, Loader2, CheckCircle, X } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 interface ExtractedData {
   merchant?: string;
   amount?: string;
   date?: string;
   items?: string[];
+  suggestedCategory?: string;
 }
 
 interface ReceiptUploadProps {
@@ -31,6 +33,7 @@ export function ReceiptUpload({ onExtracted, trigger }: ReceiptUploadProps) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [extractedData, setExtractedData] = useState<ExtractedData | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const { toast } = useToast();
 
   const handleFile = useCallback((selectedFile: File) => {
     setFile(selectedFile);
@@ -64,26 +67,45 @@ export function ReceiptUpload({ onExtracted, trigger }: ReceiptUploadProps) {
   }, []);
 
   const processReceipt = async () => {
-    if (!file) return;
+    if (!preview) return;
     setIsProcessing(true);
     
-    // todo: remove mock functionality - replace with actual API call
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    const mockData: ExtractedData = {
-      merchant: "Whole Foods Market",
-      amount: "67.42",
-      date: new Date().toISOString().split("T")[0],
-      items: ["Organic Milk", "Fresh Bread", "Avocados", "Chicken Breast"],
-    };
-    
-    setExtractedData(mockData);
-    setIsProcessing(false);
+    try {
+      const response = await fetch("/api/receipt/scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: preview }),
+      });
+      
+      if (!response.ok) {
+        throw new Error("Failed to process receipt");
+      }
+      
+      const data = await response.json();
+      const extracted: ExtractedData = {
+        merchant: data.merchant,
+        amount: data.amount?.toString(),
+        date: data.date,
+        items: data.items,
+        suggestedCategory: data.suggestedCategory,
+      };
+      
+      setExtractedData(extracted);
+    } catch (error) {
+      console.error("Error processing receipt:", error);
+      toast({
+        title: "Error",
+        description: "Failed to process receipt. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleConfirm = () => {
     if (extractedData) {
       onExtracted?.(extractedData);
-      console.log("Extracted data confirmed:", extractedData);
     }
     resetState();
     setOpen(false);
@@ -207,6 +229,12 @@ export function ReceiptUpload({ onExtracted, trigger }: ReceiptUploadProps) {
                     <p className="text-muted-foreground">Date</p>
                     <p className="font-medium">{extractedData.date}</p>
                   </div>
+                  {extractedData.suggestedCategory && (
+                    <div>
+                      <p className="text-muted-foreground">Category</p>
+                      <p className="font-medium">{extractedData.suggestedCategory}</p>
+                    </div>
+                  )}
                   {extractedData.items && extractedData.items.length > 0 && (
                     <div className="col-span-2">
                       <p className="text-muted-foreground">Items</p>

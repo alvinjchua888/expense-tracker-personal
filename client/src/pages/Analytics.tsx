@@ -1,48 +1,64 @@
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import {
   SpendingTrendChart,
   CategoryPieChart,
-  MonthlyComparisonChart,
   CategoryBarChart,
 } from "@/components/AnalyticsCharts";
-
-// todo: remove mock functionality
-const weeklyTrendData = [
-  { name: "Mon", amount: 120 },
-  { name: "Tue", amount: 85 },
-  { name: "Wed", amount: 200 },
-  { name: "Thu", amount: 45 },
-  { name: "Fri", amount: 150 },
-  { name: "Sat", amount: 280 },
-  { name: "Sun", amount: 95 },
-];
-
-const categoryData = [
-  { name: "Groceries", value: 450 },
-  { name: "Transport", value: 280 },
-  { name: "Dining", value: 320 },
-  { name: "Utilities", value: 180 },
-  { name: "Entertainment", value: 120 },
-];
-
-const monthlyComparisonData = [
-  { name: "Jan", thisYear: 1200, lastYear: 1100 },
-  { name: "Feb", thisYear: 980, lastYear: 1050 },
-  { name: "Mar", thisYear: 1450, lastYear: 1200 },
-  { name: "Apr", thisYear: 1100, lastYear: 950 },
-  { name: "May", thisYear: 1320, lastYear: 1180 },
-  { name: "Jun", thisYear: 890, lastYear: 1020 },
-];
-
-const topCategoriesData = [
-  { name: "Groceries", amount: 450 },
-  { name: "Dining", amount: 320 },
-  { name: "Transport", amount: 280 },
-  { name: "Utilities", amount: 180 },
-  { name: "Entertainment", amount: 120 },
-];
+import { Skeleton } from "@/components/ui/skeleton";
+import type { DateRange } from "react-day-picker";
 
 export default function Analytics() {
+  const [dateRange, setDateRange] = useState<DateRange | undefined>({
+    from: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+    to: new Date(),
+  });
+
+  const { data: spendingTrend = [], isLoading: trendLoading } = useQuery<{ date: string; total: number }[]>({
+    queryKey: ["/api/analytics/spending-trend", dateRange?.from?.toISOString(), dateRange?.to?.toISOString()],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (dateRange?.from) params.append("startDate", dateRange.from.toISOString());
+      if (dateRange?.to) params.append("endDate", dateRange.to.toISOString());
+      const url = `/api/analytics/spending-trend${params.toString() ? `?${params.toString()}` : ""}`;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error("Failed to fetch spending trend");
+      return response.json();
+    },
+  });
+
+  const { data: categorySpending = [], isLoading: categoryLoading } = useQuery<{ categoryId: number; name: string; total: number }[]>({
+    queryKey: ["/api/analytics/category-spending"],
+  });
+
+  const trendData = spendingTrend.map(item => ({
+    name: new Date(item.date).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }),
+    amount: Number(item.total),
+  }));
+
+  const categoryData = categorySpending
+    .filter(c => Number(c.total) > 0)
+    .map(c => ({
+      name: c.name,
+      value: Number(c.total),
+    }));
+
+  const topCategoriesData = categorySpending
+    .filter(c => Number(c.total) > 0)
+    .sort((a, b) => Number(b.total) - Number(a.total))
+    .slice(0, 5)
+    .map(c => ({
+      name: c.name,
+      amount: Number(c.total),
+    }));
+
+  const handleDateRangeChange = (range: DateRange | undefined) => {
+    setDateRange(range);
+  };
+
+  const isLoading = trendLoading || categoryLoading;
+
   return (
     <div className="space-y-6" data-testid="analytics-page">
       <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -52,18 +68,31 @@ export default function Analytics() {
             Visualize your spending patterns and trends
           </p>
         </div>
-        <DateRangePicker onRangeChange={(range) => console.log("Range:", range)} />
+        <DateRangePicker onRangeChange={handleDateRangeChange} />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <SpendingTrendChart data={weeklyTrendData} title="Weekly Spending" />
-        <CategoryPieChart data={categoryData} title="Spending by Category" />
-        <MonthlyComparisonChart
-          data={monthlyComparisonData}
-          title="Year over Year Comparison"
-        />
-        <CategoryBarChart data={topCategoriesData} title="Top Spending Categories" />
-      </div>
+      {isLoading ? (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Skeleton className="h-80" />
+          <Skeleton className="h-80" />
+          <Skeleton className="h-80" />
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <SpendingTrendChart 
+            data={trendData.length > 0 ? trendData : [{ name: "No data", amount: 0 }]} 
+            title="Spending Over Time" 
+          />
+          <CategoryPieChart 
+            data={categoryData.length > 0 ? categoryData : [{ name: "No data", value: 0 }]} 
+            title="Spending by Category" 
+          />
+          <CategoryBarChart 
+            data={topCategoriesData.length > 0 ? topCategoriesData : [{ name: "No data", amount: 0 }]} 
+            title="Top Spending Categories" 
+          />
+        </div>
+      )}
     </div>
   );
 }
