@@ -60,6 +60,7 @@ async function upsertUser(
     lastName: claims["last_name"],
     profileImageUrl: claims["profile_image_url"],
   });
+  await storage.seedDefaultCategories(claims["sub"]);
 }
 
 export async function setupAuth(app: Express) {
