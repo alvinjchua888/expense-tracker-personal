@@ -66,7 +66,7 @@ export const CURRENCY_SYMBOLS: Record<Currency, string> = {
 export const expenses = pgTable("expenses", {
   id: serial("id").primaryKey(),
   amount: real("amount").notNull(),
-  currency: varchar("currency", { length: 3 }).notNull().default("USD"),
+  currency: varchar("currency", { length: 3 }).notNull().default("PHP"),
   description: text("description"),
   merchant: text("merchant").notNull(),
   categoryId: integer("category_id").references(() => categories.id),
