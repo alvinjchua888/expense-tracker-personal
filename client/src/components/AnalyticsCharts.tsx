@@ -4,8 +4,6 @@ import {
   Pie,
   Cell,
   ResponsiveContainer,
-  LineChart,
-  Line,
   XAxis,
   YAxis,
   Tooltip,
@@ -13,6 +11,9 @@ import {
   Bar,
   Legend,
 } from "recharts";
+import { CURRENCY_SYMBOLS } from "@shared/schema";
+
+const DEFAULT_CURRENCY_SYMBOL = CURRENCY_SYMBOLS.PHP;
 
 const COLORS = [
   "hsl(var(--chart-1))",
@@ -46,7 +47,7 @@ export function SpendingTrendChart({ data, title = "Spending Trend" }: SpendingT
       <CardContent>
         <div className="h-64">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data}>
+            <BarChart data={data}>
               <XAxis
                 dataKey="name"
                 stroke="hsl(var(--muted-foreground))"
@@ -59,7 +60,7 @@ export function SpendingTrendChart({ data, title = "Spending Trend" }: SpendingT
                 fontSize={12}
                 tickLine={false}
                 axisLine={false}
-                tickFormatter={(value) => `$${value}`}
+                tickFormatter={(value) => `${DEFAULT_CURRENCY_SYMBOL}${value}`}
               />
               <Tooltip
                 contentStyle={{
@@ -67,17 +68,14 @@ export function SpendingTrendChart({ data, title = "Spending Trend" }: SpendingT
                   border: "1px solid hsl(var(--border))",
                   borderRadius: "8px",
                 }}
-                formatter={(value: number) => [`$${value.toFixed(2)}`, "Amount"]}
+                formatter={(value: number) => [`${DEFAULT_CURRENCY_SYMBOL}${value.toFixed(2)}`, "Amount"]}
               />
-              <Line
-                type="monotone"
+              <Bar
                 dataKey="amount"
-                stroke="hsl(var(--primary))"
-                strokeWidth={2}
-                dot={{ fill: "hsl(var(--primary))", strokeWidth: 0, r: 4 }}
-                activeDot={{ r: 6 }}
+                fill="hsl(var(--primary))"
+                radius={[4, 4, 0, 0]}
               />
-            </LineChart>
+            </BarChart>
           </ResponsiveContainer>
         </div>
       </CardContent>
@@ -123,7 +121,7 @@ export function CategoryPieChart({ data, title = "Spending by Category" }: Categ
                     borderRadius: "8px",
                   }}
                   formatter={(value: number) => [
-                    `$${value.toFixed(2)} (${((value / total) * 100).toFixed(1)}%)`,
+                    `${DEFAULT_CURRENCY_SYMBOL}${value.toFixed(2)} (${((value / total) * 100).toFixed(1)}%)`,
                     "",
                   ]}
                 />
@@ -186,7 +184,7 @@ export function MonthlyComparisonChart({
                 fontSize={12}
                 tickLine={false}
                 axisLine={false}
-                tickFormatter={(value) => `$${value}`}
+                tickFormatter={(value) => `${DEFAULT_CURRENCY_SYMBOL}${value}`}
               />
               <Tooltip
                 contentStyle={{
@@ -194,7 +192,7 @@ export function MonthlyComparisonChart({
                   border: "1px solid hsl(var(--border))",
                   borderRadius: "8px",
                 }}
-                formatter={(value: number) => [`$${value.toFixed(2)}`]}
+                formatter={(value: number) => [`${DEFAULT_CURRENCY_SYMBOL}${value.toFixed(2)}`]}
               />
               <Legend />
               <Bar
@@ -243,7 +241,7 @@ export function CategoryBarChart({ data, title = "Top Categories" }: CategoryBar
                 fontSize={12}
                 tickLine={false}
                 axisLine={false}
-                tickFormatter={(value) => `$${value}`}
+                tickFormatter={(value) => `${DEFAULT_CURRENCY_SYMBOL}${value}`}
               />
               <YAxis
                 type="category"
@@ -260,7 +258,7 @@ export function CategoryBarChart({ data, title = "Top Categories" }: CategoryBar
                   border: "1px solid hsl(var(--border))",
                   borderRadius: "8px",
                 }}
-                formatter={(value: number) => [`$${value.toFixed(2)}`, "Amount"]}
+                formatter={(value: number) => [`${DEFAULT_CURRENCY_SYMBOL}${value.toFixed(2)}`, "Amount"]}
               />
               <Bar
                 dataKey="amount"
