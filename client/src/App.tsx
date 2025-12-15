@@ -11,6 +11,7 @@ import Dashboard from "@/pages/Dashboard";
 import Expenses from "@/pages/Expenses";
 import Analytics from "@/pages/Analytics";
 import Categories from "@/pages/Categories";
+import AIRecommendations from "@/pages/AIRecommendations";
 import Landing from "@/pages/Landing";
 import NotFound from "@/pages/not-found";
 
@@ -21,6 +22,7 @@ function AuthenticatedRoutes() {
       <Route path="/expenses" component={Expenses} />
       <Route path="/analytics" component={Analytics} />
       <Route path="/categories" component={Categories} />
+      <Route path="/ai-recommendations" component={AIRecommendations} />
       <Route component={NotFound} />
     </Switch>
   );
