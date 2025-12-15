@@ -65,7 +65,7 @@ export function ExpenseForm({ onSubmit, trigger, defaultValues }: ExpenseFormPro
     resolver: zodResolver(expenseSchema),
     defaultValues: {
       amount: defaultValues?.amount || "",
-      currency: defaultValues?.currency || "USD",
+      currency: defaultValues?.currency || "PHP",
       merchant: defaultValues?.merchant || "",
       description: defaultValues?.description || "",
       category: defaultValues?.category || "",
@@ -78,7 +78,7 @@ export function ExpenseForm({ onSubmit, trigger, defaultValues }: ExpenseFormPro
     onSubmit?.(data);
     form.reset({
       amount: "",
-      currency: "USD",
+      currency: "PHP",
       merchant: "",
       description: "",
       category: "",
