@@ -240,6 +240,115 @@ export async function registerRoutes(
     image: z.string(),
   });
 
+  app.post("/api/ai/recommendations", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      const expenses = await storage.getExpenses(userId);
+      const categories = await storage.getCategories(userId);
+      
+      if (expenses.length === 0) {
+        return res.json({
+          analysis: "No expenses recorded yet. Start tracking your expenses to get personalized recommendations.",
+          recommendations: [
+            "Start by adding your daily expenses to build spending history",
+            "Create categories that match your spending habits",
+            "Set up a budget for each category to track your progress"
+          ]
+        });
+      }
+
+      const categoryMap = new Map(categories.map(c => [c.id, c.name]));
+      const expenseSummary = expenses.map(e => ({
+        amount: e.amount,
+        currency: e.currency || "PHP",
+        category: e.categoryId ? categoryMap.get(e.categoryId) || "Uncategorized" : "Uncategorized",
+        date: e.date,
+        description: e.description
+      }));
+
+      const totalByCategory: Record<string, number> = {};
+      const totalByMonth: Record<string, number> = {};
+      let grandTotal = 0;
+
+      expenseSummary.forEach(e => {
+        const amount = parseFloat(String(e.amount));
+        grandTotal += amount;
+        totalByCategory[e.category] = (totalByCategory[e.category] || 0) + amount;
+        const month = new Date(e.date).toISOString().slice(0, 7);
+        totalByMonth[month] = (totalByMonth[month] || 0) + amount;
+      });
+
+      const prompt = `You are a personal finance advisor. Analyze the following spending data and provide:
+1. A brief analysis of spending trends (2-3 sentences)
+2. Exactly 3 specific, actionable recommendations to reduce spending
+
+User's expense data:
+- Total expenses: ${grandTotal.toFixed(2)} PHP
+- Number of transactions: ${expenses.length}
+- Spending by category: ${JSON.stringify(totalByCategory)}
+- Monthly spending: ${JSON.stringify(totalByMonth)}
+- Recent expenses: ${JSON.stringify(expenseSummary.slice(0, 10))}
+
+Respond in JSON format:
+{
+  "analysis": "Your spending analysis here",
+  "recommendations": ["Recommendation 1", "Recommendation 2", "Recommendation 3"]
+}
+
+Only respond with valid JSON, no additional text.`;
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o",
+        max_completion_tokens: 1000,
+        messages: [{ role: "user", content: prompt }],
+      });
+
+      const content = response.choices[0]?.message?.content;
+      if (!content) {
+        return res.status(500).json({ error: "Failed to generate recommendations" });
+      }
+
+      let cleanedContent = content.trim();
+      if (cleanedContent.startsWith("```json")) {
+        cleanedContent = cleanedContent.slice(7);
+      } else if (cleanedContent.startsWith("```")) {
+        cleanedContent = cleanedContent.slice(3);
+      }
+      if (cleanedContent.endsWith("```")) {
+        cleanedContent = cleanedContent.slice(0, -3);
+      }
+      cleanedContent = cleanedContent.trim();
+
+      const jsonMatch = cleanedContent.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        return res.status(500).json({ error: "Failed to parse AI response" });
+      }
+
+      let recommendations;
+      try {
+        recommendations = JSON.parse(jsonMatch[0]);
+      } catch {
+        return res.status(500).json({ error: "Failed to parse AI response JSON" });
+      }
+
+      if (!recommendations.analysis || typeof recommendations.analysis !== "string") {
+        recommendations.analysis = "Unable to generate analysis at this time.";
+      }
+      if (!Array.isArray(recommendations.recommendations) || recommendations.recommendations.length === 0) {
+        recommendations.recommendations = [
+          "Review your largest expense categories for savings opportunities",
+          "Consider setting a monthly budget for discretionary spending",
+          "Track expenses daily to identify spending patterns"
+        ];
+      }
+
+      res.json(recommendations);
+    } catch (error) {
+      console.error("Error generating AI recommendations:", error);
+      res.status(500).json({ error: "Failed to generate recommendations" });
+    }
+  });
+
   app.post("/api/receipt/scan", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const parsed = receiptScanSchema.safeParse(req.body);

@@ -14,13 +14,14 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
-import { LayoutDashboard, Receipt, BarChart3, Tag, Wallet, LogOut } from "lucide-react";
+import { LayoutDashboard, Receipt, BarChart3, Tag, Wallet, LogOut, Sparkles } from "lucide-react";
 
 const menuItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "Expenses", url: "/expenses", icon: Receipt },
   { title: "Analytics", url: "/analytics", icon: BarChart3 },
   { title: "Categories", url: "/categories", icon: Tag },
+  { title: "AI Recommendations", url: "/ai-recommendations", icon: Sparkles },
 ];
 
 export function AppSidebar() {
