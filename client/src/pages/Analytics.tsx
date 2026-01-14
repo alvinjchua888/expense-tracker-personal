@@ -5,6 +5,9 @@ import {
   SpendingTrendChart,
   CategoryPieChart,
   CategoryBarChart,
+  SummaryStatsCards,
+  MonthComparisonCard,
+  WeeklyBreakdownChart,
 } from "@/components/AnalyticsCharts";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { DateRange } from "react-day-picker";
@@ -32,6 +35,28 @@ export default function Analytics() {
     queryKey: ["/api/analytics/category-spending"],
   });
 
+  const { data: summaryStats, isLoading: statsLoading } = useQuery<{
+    totalSpending: number;
+    avgPerDay: number;
+    highestExpense: number;
+    transactionCount: number;
+    avgPerTransaction: number;
+  }>({
+    queryKey: ["/api/analytics/summary-stats"],
+  });
+
+  const { data: monthlyComparison, isLoading: monthlyLoading } = useQuery<{
+    currentMonth: number;
+    previousMonth: number;
+    percentChange: number;
+  }>({
+    queryKey: ["/api/analytics/monthly-comparison"],
+  });
+
+  const { data: weeklyBreakdown = [], isLoading: weeklyLoading } = useQuery<{ dayOfWeek: string; total: number }[]>({
+    queryKey: ["/api/analytics/weekly-breakdown"],
+  });
+
   const trendData = spendingTrend.map(item => ({
     name: new Date(item.date).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }),
     amount: Number(item.total),
@@ -57,7 +82,7 @@ export default function Analytics() {
     setDateRange(range);
   };
 
-  const isLoading = trendLoading || categoryLoading;
+  const isLoading = trendLoading || categoryLoading || statsLoading || monthlyLoading || weeklyLoading;
 
   return (
     <div className="space-y-6" data-testid="analytics-page">
@@ -72,25 +97,58 @@ export default function Analytics() {
       </div>
 
       {isLoading ? (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Skeleton className="h-80" />
-          <Skeleton className="h-80" />
-          <Skeleton className="h-80" />
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <Skeleton className="h-24" />
+            <Skeleton className="h-24" />
+            <Skeleton className="h-24" />
+            <Skeleton className="h-24" />
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <Skeleton className="h-80" />
+            <Skeleton className="h-80" />
+            <Skeleton className="h-80" />
+            <Skeleton className="h-80" />
+            <Skeleton className="h-80" />
+          </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <SpendingTrendChart 
-            data={trendData.length > 0 ? trendData : [{ name: "No data", amount: 0 }]} 
-            title="Spending Over Time" 
-          />
-          <CategoryPieChart 
-            data={categoryData.length > 0 ? categoryData : [{ name: "No data", value: 0 }]} 
-            title="Spending by Category" 
-          />
-          <CategoryBarChart 
-            data={topCategoriesData.length > 0 ? topCategoriesData : [{ name: "No data", amount: 0 }]} 
-            title="Top Spending Categories" 
-          />
+        <div className="space-y-6">
+          {summaryStats && (
+            <SummaryStatsCards
+              totalSpending={summaryStats.totalSpending}
+              avgPerDay={summaryStats.avgPerDay}
+              highestExpense={summaryStats.highestExpense}
+              transactionCount={summaryStats.transactionCount}
+              avgPerTransaction={summaryStats.avgPerTransaction}
+            />
+          )}
+          
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {monthlyComparison && (
+              <MonthComparisonCard
+                currentMonth={monthlyComparison.currentMonth}
+                previousMonth={monthlyComparison.previousMonth}
+                percentChange={monthlyComparison.percentChange}
+              />
+            )}
+            <WeeklyBreakdownChart 
+              data={weeklyBreakdown.length > 0 ? weeklyBreakdown : [{ dayOfWeek: "No data", total: 0 }]}
+              title="Spending by Day of Week"
+            />
+            <SpendingTrendChart 
+              data={trendData.length > 0 ? trendData : [{ name: "No data", amount: 0 }]} 
+              title="Spending Over Time" 
+            />
+            <CategoryPieChart 
+              data={categoryData.length > 0 ? categoryData : [{ name: "No data", value: 0 }]} 
+              title="Spending by Category" 
+            />
+            <CategoryBarChart 
+              data={topCategoriesData.length > 0 ? topCategoriesData : [{ name: "No data", amount: 0 }]} 
+              title="Top Spending Categories" 
+            />
+          </div>
         </div>
       )}
     </div>
