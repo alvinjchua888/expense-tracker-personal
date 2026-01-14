@@ -4,6 +4,8 @@ import { ExpenseList } from "@/components/ExpenseList";
 import { ExpenseForm } from "@/components/ExpenseForm";
 import { ReceiptUpload } from "@/components/ReceiptUpload";
 import { DateRangePicker } from "@/components/DateRangePicker";
+import { ExportData } from "@/components/ExportData";
+import { Pagination } from "@/components/Pagination";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Expense as DbExpense, Category, Currency } from "@shared/schema";
@@ -20,18 +22,38 @@ interface Expense {
   hasReceipt?: boolean;
 }
 
+interface PaginatedResponse {
+  expenses: DbExpense[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
 export default function Expenses() {
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
 
-  const queryKey = ["/api/expenses", dateRange?.from?.toISOString(), dateRange?.to?.toISOString()].filter(Boolean);
-  
-  const { data: dbExpenses = [], isLoading: expensesLoading } = useQuery<DbExpense[]>({
+  const queryKey = [
+    "/api/expenses",
+    dateRange?.from?.toISOString(),
+    dateRange?.to?.toISOString(),
+    currentPage,
+    pageSize,
+  ].filter(Boolean);
+
+  const { data: paginatedData, isLoading: expensesLoading } = useQuery<PaginatedResponse>({
     queryKey,
     queryFn: async () => {
       const params = new URLSearchParams();
       if (dateRange?.from) params.append("startDate", dateRange.from.toISOString());
       if (dateRange?.to) params.append("endDate", dateRange.to.toISOString());
-      const url = `/api/expenses${params.toString() ? `?${params.toString()}` : ""}`;
+      params.append("page", currentPage.toString());
+      params.append("limit", pageSize.toString());
+      const url = `/api/expenses?${params.toString()}`;
       const response = await fetch(url);
       if (!response.ok) throw new Error("Failed to fetch expenses");
       return response.json();
@@ -48,6 +70,17 @@ export default function Expenses() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/analytics"] });
+    },
+  });
+
+  const updateExpenseMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: { amount: number; currency: string; merchant: string; description?: string; categoryId?: number; date: Date } }) => {
+      return apiRequest("PUT", `/api/expenses/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/analytics"] });
     },
   });
 
@@ -57,10 +90,26 @@ export default function Expenses() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/analytics"] });
+    },
+  });
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      return apiRequest("POST", "/api/expenses/bulk-delete", { ids });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/analytics"] });
     },
   });
 
   const categoryMap = new Map(categories.map(c => [c.id, c.name]));
+  const categoryIdMap = new Map(categories.map(c => [c.name.toLowerCase(), c.id]));
+
+  const dbExpenses = paginatedData?.expenses || [];
+  const totalItems = paginatedData?.total || 0;
+  const totalPages = paginatedData?.totalPages || 1;
 
   const expenses: Expense[] = dbExpenses.map(e => ({
     id: e.id.toString(),
@@ -74,7 +123,7 @@ export default function Expenses() {
   }));
 
   const handleAddExpense = (data: { amount: string; currency: string; merchant: string; description?: string; category: string; date: Date }) => {
-    const categoryId = categories.find(c => c.name.toLowerCase() === data.category.toLowerCase())?.id;
+    const categoryId = categoryIdMap.get(data.category.toLowerCase());
     createExpenseMutation.mutate({
       amount: parseFloat(data.amount),
       currency: data.currency,
@@ -85,10 +134,25 @@ export default function Expenses() {
     });
   };
 
+  const handleUpdateExpense = (id: string, data: { amount: string; currency: string; merchant: string; description?: string; category: string; date: Date }) => {
+    const categoryId = categoryIdMap.get(data.category.toLowerCase());
+    updateExpenseMutation.mutate({
+      id,
+      data: {
+        amount: parseFloat(data.amount),
+        currency: data.currency,
+        merchant: data.merchant,
+        description: data.description,
+        categoryId,
+        date: data.date,
+      },
+    });
+    setEditingExpense(null);
+    setIsEditDialogOpen(false);
+  };
+
   const handleReceiptData = (data: { merchant?: string; amount?: string; date?: string; suggestedCategory?: string }) => {
-    const categoryId = categories.find(c => 
-      c.name.toLowerCase() === (data.suggestedCategory || "").toLowerCase()
-    )?.id;
+    const categoryId = categoryIdMap.get((data.suggestedCategory || "").toLowerCase());
     createExpenseMutation.mutate({
       amount: parseFloat(data.amount || "0"),
       currency: "USD",
@@ -99,12 +163,38 @@ export default function Expenses() {
     });
   };
 
+  const handleEditExpense = (expense: Expense) => {
+    setEditingExpense(expense);
+    setIsEditDialogOpen(true);
+  };
+
   const handleDeleteExpense = (id: string) => {
     deleteExpenseMutation.mutate(id);
   };
 
+  const handleBulkDelete = (ids: string[]) => {
+    bulkDeleteMutation.mutate(ids);
+  };
+
   const handleDateRangeChange = (range: DateRange | undefined) => {
     setDateRange(range);
+    setCurrentPage(1);
+  };
+
+  const handleEditDialogChange = (open: boolean) => {
+    setIsEditDialogOpen(open);
+    if (!open) {
+      setEditingExpense(null);
+    }
+  };
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+  };
+
+  const handlePageSizeChange = (size: number) => {
+    setPageSize(size);
+    setCurrentPage(1);
   };
 
   return (
@@ -118,6 +208,7 @@ export default function Expenses() {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <DateRangePicker onRangeChange={handleDateRangeChange} />
+          <ExportData expenses={expenses} />
           <ReceiptUpload onExtracted={handleReceiptData} />
           <ExpenseForm onSubmit={handleAddExpense} />
         </div>
@@ -132,12 +223,32 @@ export default function Expenses() {
           <Skeleton className="h-16" />
         </div>
       ) : (
-        <ExpenseList
-          expenses={expenses}
-          onDelete={handleDeleteExpense}
-          onEdit={(e) => console.log("Edit expense:", e)}
-        />
+        <>
+          <ExpenseList
+            expenses={expenses}
+            onDelete={handleDeleteExpense}
+            onEdit={handleEditExpense}
+            onBulkDelete={handleBulkDelete}
+          />
+          {totalItems > 0 && (
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              totalItems={totalItems}
+              pageSize={pageSize}
+              onPageChange={handlePageChange}
+              onPageSizeChange={handlePageSizeChange}
+            />
+          )}
+        </>
       )}
+
+      <ExpenseForm
+        expense={editingExpense}
+        open={isEditDialogOpen}
+        onOpenChange={handleEditDialogChange}
+        onUpdate={handleUpdateExpense}
+      />
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -52,30 +52,74 @@ const expenseSchema = z.object({
 
 type ExpenseFormValues = z.infer<typeof expenseSchema>;
 
-interface ExpenseFormProps {
-  onSubmit?: (data: ExpenseFormValues) => void;
-  trigger?: React.ReactNode;
-  defaultValues?: Partial<ExpenseFormValues>;
+interface ExpenseToEdit {
+  id: string;
+  amount: number;
+  currency: Currency;
+  description: string;
+  category: string;
+  merchant: string;
+  date: Date;
 }
 
-export function ExpenseForm({ onSubmit, trigger, defaultValues }: ExpenseFormProps) {
-  const [open, setOpen] = useState(false);
+interface ExpenseFormProps {
+  onSubmit?: (data: ExpenseFormValues) => void;
+  onUpdate?: (id: string, data: ExpenseFormValues) => void;
+  trigger?: React.ReactNode;
+  expense?: ExpenseToEdit | null;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}
+
+export function ExpenseForm({ onSubmit, onUpdate, trigger, expense, open: controlledOpen, onOpenChange }: ExpenseFormProps) {
+  const [internalOpen, setInternalOpen] = useState(false);
+
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : internalOpen;
+  const setOpen = isControlled ? (onOpenChange || (() => {})) : setInternalOpen;
+
+  const isEditing = !!expense;
 
   const form = useForm<ExpenseFormValues>({
     resolver: zodResolver(expenseSchema),
     defaultValues: {
-      amount: defaultValues?.amount || "",
-      currency: defaultValues?.currency || "PHP",
-      merchant: defaultValues?.merchant || "",
-      description: defaultValues?.description || "",
-      category: defaultValues?.category || "",
-      date: defaultValues?.date || new Date(),
+      amount: "",
+      currency: "PHP",
+      merchant: "",
+      description: "",
+      category: "",
+      date: new Date(),
     },
   });
 
+  useEffect(() => {
+    if (expense) {
+      form.reset({
+        amount: expense.amount.toString(),
+        currency: expense.currency,
+        merchant: expense.merchant,
+        description: expense.description || "",
+        category: expense.category,
+        date: new Date(expense.date),
+      });
+    } else {
+      form.reset({
+        amount: "",
+        currency: "PHP",
+        merchant: "",
+        description: "",
+        category: "",
+        date: new Date(),
+      });
+    }
+  }, [expense, form]);
+
   const handleSubmit = (data: ExpenseFormValues) => {
-    console.log("Form submitted:", data);
-    onSubmit?.(data);
+    if (isEditing && expense) {
+      onUpdate?.(expense.id, data);
+    } else {
+      onSubmit?.(data);
+    }
     form.reset({
       amount: "",
       currency: "PHP",
@@ -89,17 +133,19 @@ export function ExpenseForm({ onSubmit, trigger, defaultValues }: ExpenseFormPro
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        {trigger || (
-          <Button data-testid="button-add-expense">
-            <Plus className="h-4 w-4 mr-2" />
-            Add Expense
-          </Button>
-        )}
-      </DialogTrigger>
+      {!isControlled && (
+        <DialogTrigger asChild>
+          {trigger || (
+            <Button data-testid="button-add-expense">
+              <Plus className="h-4 w-4 mr-2" />
+              Add Expense
+            </Button>
+          )}
+        </DialogTrigger>
+      )}
       <DialogContent className="sm:max-w-lg" data-testid="dialog-expense-form">
         <DialogHeader>
-          <DialogTitle>Add New Expense</DialogTitle>
+          <DialogTitle>{isEditing ? "Edit Expense" : "Add New Expense"}</DialogTitle>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
@@ -247,7 +293,7 @@ export function ExpenseForm({ onSubmit, trigger, defaultValues }: ExpenseFormPro
                 Cancel
               </Button>
               <Button type="submit" data-testid="button-save-expense">
-                Save Expense
+                {isEditing ? "Update Expense" : "Save Expense"}
               </Button>
             </div>
           </form>

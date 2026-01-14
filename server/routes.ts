@@ -108,8 +108,8 @@ export async function registerRoutes(
   app.get("/api/expenses", isAuthenticated, async (req: any, res: Response) => {
     try {
       const userId = req.user.claims.sub;
-      const filters: { startDate?: Date; endDate?: Date; categoryId?: number } = {};
-      
+      const filters: { startDate?: Date; endDate?: Date; categoryId?: number; page?: number; limit?: number } = {};
+
       if (req.query.startDate) {
         filters.startDate = new Date(req.query.startDate as string);
       }
@@ -119,9 +119,26 @@ export async function registerRoutes(
       if (req.query.categoryId) {
         filters.categoryId = parseInt(req.query.categoryId as string);
       }
-      
-      const expenses = await storage.getExpenses(userId, Object.keys(filters).length > 0 ? filters : undefined);
-      res.json(expenses);
+      if (req.query.page) {
+        filters.page = parseInt(req.query.page as string);
+      }
+      if (req.query.limit) {
+        filters.limit = parseInt(req.query.limit as string);
+      }
+
+      const result = await storage.getExpenses(userId, Object.keys(filters).length > 0 ? filters : undefined);
+
+      if (filters.page && filters.limit) {
+        res.json({
+          expenses: result.expenses,
+          total: result.total,
+          page: filters.page,
+          limit: filters.limit,
+          totalPages: Math.ceil(result.total / filters.limit),
+        });
+      } else {
+        res.json(result.expenses);
+      }
     } catch (error) {
       console.error("Error fetching expenses:", error);
       res.status(500).json({ error: "Failed to fetch expenses" });
@@ -207,6 +224,25 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/expenses/bulk-delete", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { ids } = req.body;
+
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ error: "Invalid expense IDs" });
+      }
+
+      const numericIds = ids.map((id: string | number) => parseInt(id.toString())).filter((id: number) => !isNaN(id));
+      const deletedCount = await storage.deleteExpenses(numericIds, userId);
+
+      res.json({ deleted: deletedCount });
+    } catch (error) {
+      console.error("Error bulk deleting expenses:", error);
+      res.status(500).json({ error: "Failed to bulk delete expenses" });
+    }
+  });
+
   app.get("/api/analytics/category-spending", isAuthenticated, async (req: any, res: Response) => {
     try {
       const userId = req.user.claims.sub;
@@ -221,18 +257,77 @@ export async function registerRoutes(
   app.get("/api/analytics/spending-trend", isAuthenticated, async (req: any, res: Response) => {
     try {
       const userId = req.user.claims.sub;
-      const startDate = req.query.startDate 
+      const startDate = req.query.startDate
         ? new Date(req.query.startDate as string)
         : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-      const endDate = req.query.endDate 
+      const endDate = req.query.endDate
         ? new Date(req.query.endDate as string)
         : new Date();
-      
+
       const trend = await storage.getSpendingByPeriod(userId, startDate, endDate);
       res.json(trend);
     } catch (error) {
       console.error("Error fetching spending trend:", error);
       res.status(500).json({ error: "Failed to fetch spending trend" });
+    }
+  });
+
+  app.get("/api/analytics/monthly-comparison", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      const comparison = await storage.getMonthlyComparison(userId);
+      res.json(comparison);
+    } catch (error) {
+      console.error("Error fetching monthly comparison:", error);
+      res.status(500).json({ error: "Failed to fetch monthly comparison" });
+    }
+  });
+
+  app.get("/api/analytics/merchant-spending", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      const startDate = req.query.startDate
+        ? new Date(req.query.startDate as string)
+        : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const endDate = req.query.endDate
+        ? new Date(req.query.endDate as string)
+        : new Date();
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
+
+      const spending = await storage.getMerchantSpending(userId, startDate, endDate, limit);
+      res.json(spending);
+    } catch (error) {
+      console.error("Error fetching merchant spending:", error);
+      res.status(500).json({ error: "Failed to fetch merchant spending" });
+    }
+  });
+
+  app.get("/api/analytics/day-of-week-spending", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      const startDate = req.query.startDate
+        ? new Date(req.query.startDate as string)
+        : new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+      const endDate = req.query.endDate
+        ? new Date(req.query.endDate as string)
+        : new Date();
+
+      const spending = await storage.getDayOfWeekSpending(userId, startDate, endDate);
+      res.json(spending);
+    } catch (error) {
+      console.error("Error fetching day of week spending:", error);
+      res.status(500).json({ error: "Failed to fetch day of week spending" });
+    }
+  });
+
+  app.get("/api/analytics/spending-forecast", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      const forecast = await storage.getSpendingForecast(userId);
+      res.json(forecast);
+    } catch (error) {
+      console.error("Error fetching spending forecast:", error);
+      res.status(500).json({ error: "Failed to fetch spending forecast" });
     }
   });
 

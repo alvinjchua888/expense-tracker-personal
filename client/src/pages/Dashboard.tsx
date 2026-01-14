@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { DollarSign, Calendar, Wallet, TrendingUp } from "lucide-react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { StatCard } from "@/components/StatCard";
@@ -20,6 +21,9 @@ interface Expense {
 }
 
 export default function Dashboard() {
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+
   const { data: dbExpenses = [], isLoading: expensesLoading } = useQuery<DbExpense[]>({
     queryKey: ["/api/expenses"],
   });
@@ -34,6 +38,17 @@ export default function Dashboard() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/analytics"] });
+    },
+  });
+
+  const updateExpenseMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: { amount: number; currency: string; merchant: string; description?: string; categoryId?: number; date: Date } }) => {
+      return apiRequest("PUT", `/api/expenses/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/analytics"] });
     },
   });
 
@@ -43,10 +58,12 @@ export default function Dashboard() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/analytics"] });
     },
   });
 
   const categoryMap = new Map(categories.map(c => [c.id, c.name]));
+  const categoryIdMap = new Map(categories.map(c => [c.name.toLowerCase(), c.id]));
 
   const expenses: Expense[] = dbExpenses.map(e => ({
     id: e.id.toString(),
@@ -59,17 +76,17 @@ export default function Dashboard() {
     hasReceipt: e.hasReceipt || false,
   }));
 
-  const primaryCurrency = expenses.length > 0 
+  const primaryCurrency = expenses.length > 0
     ? (expenses.reduce((acc, e) => {
         acc[e.currency] = (acc[e.currency] || 0) + 1;
         return acc;
       }, {} as Record<Currency, number>))
     : null;
-  const mostUsedCurrency = primaryCurrency 
+  const mostUsedCurrency = primaryCurrency
     ? (Object.entries(primaryCurrency).sort((a, b) => b[1] - a[1])[0]?.[0] as Currency) || "USD"
     : "USD";
   const currencySymbol = CURRENCY_SYMBOLS[mostUsedCurrency];
-  
+
   const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
   const thisMonth = expenses
     .filter((e) => {
@@ -85,7 +102,7 @@ export default function Dashboard() {
     .reduce((sum, e) => sum + e.amount, 0);
 
   const handleAddExpense = (data: { amount: string; currency: string; merchant: string; description?: string; category: string; date: Date }) => {
-    const categoryId = categories.find(c => c.name.toLowerCase() === data.category.toLowerCase())?.id;
+    const categoryId = categoryIdMap.get(data.category.toLowerCase());
     createExpenseMutation.mutate({
       amount: parseFloat(data.amount),
       currency: data.currency,
@@ -96,10 +113,25 @@ export default function Dashboard() {
     });
   };
 
+  const handleUpdateExpense = (id: string, data: { amount: string; currency: string; merchant: string; description?: string; category: string; date: Date }) => {
+    const categoryId = categoryIdMap.get(data.category.toLowerCase());
+    updateExpenseMutation.mutate({
+      id,
+      data: {
+        amount: parseFloat(data.amount),
+        currency: data.currency,
+        merchant: data.merchant,
+        description: data.description,
+        categoryId,
+        date: data.date,
+      },
+    });
+    setEditingExpense(null);
+    setIsEditDialogOpen(false);
+  };
+
   const handleReceiptData = (data: { merchant?: string; amount?: string; date?: string; suggestedCategory?: string }) => {
-    const categoryId = categories.find(c => 
-      c.name.toLowerCase() === (data.suggestedCategory || "").toLowerCase()
-    )?.id;
+    const categoryId = categoryIdMap.get((data.suggestedCategory || "").toLowerCase());
     createExpenseMutation.mutate({
       amount: parseFloat(data.amount || "0"),
       currency: "USD",
@@ -110,8 +142,20 @@ export default function Dashboard() {
     });
   };
 
+  const handleEditExpense = (expense: Expense) => {
+    setEditingExpense(expense);
+    setIsEditDialogOpen(true);
+  };
+
   const handleDeleteExpense = (id: string) => {
     deleteExpenseMutation.mutate(id);
+  };
+
+  const handleEditDialogChange = (open: boolean) => {
+    setIsEditDialogOpen(open);
+    if (!open) {
+      setEditingExpense(null);
+    }
   };
 
   return (
@@ -171,9 +215,16 @@ export default function Dashboard() {
         <ExpenseList
           expenses={expenses}
           onDelete={handleDeleteExpense}
-          onEdit={(e) => console.log("Edit expense:", e)}
+          onEdit={handleEditExpense}
         />
       )}
+
+      <ExpenseForm
+        expense={editingExpense}
+        open={isEditDialogOpen}
+        onOpenChange={handleEditDialogChange}
+        onUpdate={handleUpdateExpense}
+      />
     </div>
   );
 }

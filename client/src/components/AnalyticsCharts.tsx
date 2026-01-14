@@ -10,6 +10,9 @@ import {
   BarChart,
   Bar,
   Legend,
+  ComposedChart,
+  Area,
+  Line,
 } from "recharts";
 import { CURRENCY_SYMBOLS } from "@shared/schema";
 
@@ -266,6 +269,212 @@ export function CategoryBarChart({ data, title = "Top Categories" }: CategoryBar
                 radius={[0, 4, 4, 0]}
               />
             </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+interface MerchantData {
+  merchant: string;
+  total: number;
+  count: number;
+}
+
+interface MerchantBarChartProps {
+  data: MerchantData[];
+  title?: string;
+}
+
+export function MerchantBarChart({ data, title = "Top Merchants" }: MerchantBarChartProps) {
+  return (
+    <Card data-testid="chart-merchant-bar">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-lg">{title}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="h-64">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={data} layout="vertical">
+              <XAxis
+                type="number"
+                stroke="hsl(var(--muted-foreground))"
+                fontSize={12}
+                tickLine={false}
+                axisLine={false}
+                tickFormatter={(value) => `${DEFAULT_CURRENCY_SYMBOL}${value}`}
+              />
+              <YAxis
+                type="category"
+                dataKey="merchant"
+                stroke="hsl(var(--muted-foreground))"
+                fontSize={12}
+                tickLine={false}
+                axisLine={false}
+                width={100}
+              />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: "hsl(var(--popover))",
+                  border: "1px solid hsl(var(--border))",
+                  borderRadius: "8px",
+                }}
+                formatter={(value: number, _name: string, props: { payload: MerchantData }) => [
+                  `${DEFAULT_CURRENCY_SYMBOL}${value.toFixed(2)} (${props.payload.count} transactions)`,
+                  "Total",
+                ]}
+              />
+              <Bar
+                dataKey="total"
+                fill="hsl(var(--chart-3))"
+                radius={[0, 4, 4, 0]}
+              />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+interface DayOfWeekData {
+  day: string;
+  average: number;
+  total: number;
+}
+
+interface DayOfWeekChartProps {
+  data: DayOfWeekData[];
+  title?: string;
+}
+
+export function DayOfWeekChart({ data, title = "Spending by Day of Week" }: DayOfWeekChartProps) {
+  return (
+    <Card data-testid="chart-day-of-week">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-lg">{title}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="h-64">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={data}>
+              <XAxis
+                dataKey="day"
+                stroke="hsl(var(--muted-foreground))"
+                fontSize={12}
+                tickLine={false}
+                axisLine={false}
+                tickFormatter={(value) => value.slice(0, 3)}
+              />
+              <YAxis
+                stroke="hsl(var(--muted-foreground))"
+                fontSize={12}
+                tickLine={false}
+                axisLine={false}
+                tickFormatter={(value) => `${DEFAULT_CURRENCY_SYMBOL}${value}`}
+              />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: "hsl(var(--popover))",
+                  border: "1px solid hsl(var(--border))",
+                  borderRadius: "8px",
+                }}
+                formatter={(value: number, name: string) => [
+                  `${DEFAULT_CURRENCY_SYMBOL}${value.toFixed(2)}`,
+                  name === "average" ? "Avg/Day" : "Total",
+                ]}
+              />
+              <Legend />
+              <Bar
+                dataKey="average"
+                name="Average"
+                fill="hsl(var(--chart-4))"
+                radius={[4, 4, 0, 0]}
+              />
+              <Bar
+                dataKey="total"
+                name="Total"
+                fill="hsl(var(--chart-5))"
+                radius={[4, 4, 0, 0]}
+              />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+interface ForecastData {
+  period: string;
+  actual: number | null;
+  forecast: number;
+}
+
+interface SpendingForecastChartProps {
+  data: ForecastData[];
+  title?: string;
+}
+
+export function SpendingForecastChart({ data, title = "Spending Forecast" }: SpendingForecastChartProps) {
+  return (
+    <Card data-testid="chart-spending-forecast">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-lg">{title}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="h-72">
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart data={data}>
+              <XAxis
+                dataKey="period"
+                stroke="hsl(var(--muted-foreground))"
+                fontSize={11}
+                tickLine={false}
+                axisLine={false}
+                angle={-20}
+                textAnchor="end"
+                height={60}
+              />
+              <YAxis
+                stroke="hsl(var(--muted-foreground))"
+                fontSize={12}
+                tickLine={false}
+                axisLine={false}
+                tickFormatter={(value) => `${DEFAULT_CURRENCY_SYMBOL}${value}`}
+              />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: "hsl(var(--popover))",
+                  border: "1px solid hsl(var(--border))",
+                  borderRadius: "8px",
+                }}
+                formatter={(value: number | null, name: string) => [
+                  value !== null ? `${DEFAULT_CURRENCY_SYMBOL}${value.toFixed(2)}` : "—",
+                  name === "actual" ? "Actual" : "Forecast",
+                ]}
+              />
+              <Legend />
+              <Area
+                type="monotone"
+                dataKey="forecast"
+                name="Forecast"
+                fill="hsl(var(--chart-2))"
+                fillOpacity={0.3}
+                stroke="hsl(var(--chart-2))"
+                strokeDasharray="5 5"
+              />
+              <Line
+                type="monotone"
+                dataKey="actual"
+                name="Actual"
+                stroke="hsl(var(--chart-1))"
+                strokeWidth={2}
+                dot={{ fill: "hsl(var(--chart-1))", strokeWidth: 2 }}
+                connectNulls={false}
+              />
+            </ComposedChart>
           </ResponsiveContainer>
         </div>
       </CardContent>

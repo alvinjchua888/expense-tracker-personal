@@ -6,6 +6,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Checkbox } from "@/components/ui/checkbox";
 import { CategoryBadge } from "./CategoryBadge";
 import { format } from "date-fns";
 import { CURRENCY_SYMBOLS, type Currency } from "@shared/schema";
@@ -25,15 +26,25 @@ interface ExpenseItemProps {
   expense: Expense;
   onEdit?: (expense: Expense) => void;
   onDelete?: (id: string) => void;
+  selectable?: boolean;
+  selected?: boolean;
+  onSelect?: (id: string, selected: boolean) => void;
 }
 
-export function ExpenseItem({ expense, onEdit, onDelete }: ExpenseItemProps) {
+export function ExpenseItem({ expense, onEdit, onDelete, selectable, selected, onSelect }: ExpenseItemProps) {
   return (
     <div
       className="flex items-center justify-between gap-4 p-4 hover-elevate rounded-md"
       data-testid={`expense-item-${expense.id}`}
     >
       <div className="flex items-center gap-4 flex-1 min-w-0">
+        {selectable && (
+          <Checkbox
+            checked={selected}
+            onCheckedChange={(checked) => onSelect?.(expense.id, !!checked)}
+            data-testid={`checkbox-expense-${expense.id}`}
+          />
+        )}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <p className="font-medium truncate">{expense.merchant}</p>
