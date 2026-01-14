@@ -236,6 +236,39 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/analytics/summary-stats", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      const stats = await storage.getSummaryStats(userId);
+      res.json(stats);
+    } catch (error) {
+      console.error("Error fetching summary stats:", error);
+      res.status(500).json({ error: "Failed to fetch summary stats" });
+    }
+  });
+
+  app.get("/api/analytics/monthly-comparison", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      const comparison = await storage.getMonthlyComparison(userId);
+      res.json(comparison);
+    } catch (error) {
+      console.error("Error fetching monthly comparison:", error);
+      res.status(500).json({ error: "Failed to fetch monthly comparison" });
+    }
+  });
+
+  app.get("/api/analytics/weekly-breakdown", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      const breakdown = await storage.getWeeklyBreakdown(userId);
+      res.json(breakdown);
+    } catch (error) {
+      console.error("Error fetching weekly breakdown:", error);
+      res.status(500).json({ error: "Failed to fetch weekly breakdown" });
+    }
+  });
+
   const receiptScanSchema = z.object({
     image: z.string(),
   });

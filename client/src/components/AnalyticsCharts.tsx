@@ -12,6 +12,7 @@ import {
   Legend,
 } from "recharts";
 import { CURRENCY_SYMBOLS } from "@shared/schema";
+import { TrendingUp, TrendingDown, Wallet, Calendar, CreditCard, DollarSign } from "lucide-react";
 
 const DEFAULT_CURRENCY_SYMBOL = CURRENCY_SYMBOLS.PHP;
 
@@ -264,6 +265,154 @@ export function CategoryBarChart({ data, title = "Top Categories" }: CategoryBar
                 dataKey="amount"
                 fill="hsl(var(--primary))"
                 radius={[0, 4, 4, 0]}
+              />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+interface SummaryStatsProps {
+  totalSpending: number;
+  avgPerDay: number;
+  highestExpense: number;
+  transactionCount: number;
+  avgPerTransaction: number;
+}
+
+export function SummaryStatsCards({ totalSpending, avgPerDay, highestExpense, transactionCount, avgPerTransaction }: SummaryStatsProps) {
+  const stats = [
+    { label: "Total Spending", value: totalSpending, icon: Wallet, format: "currency" },
+    { label: "Avg. per Day", value: avgPerDay, icon: Calendar, format: "currency" },
+    { label: "Highest Expense", value: highestExpense, icon: DollarSign, format: "currency" },
+    { label: "Transactions", value: transactionCount, icon: CreditCard, format: "number" },
+  ];
+
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-4" data-testid="summary-stats-cards">
+      {stats.map((stat) => (
+        <Card key={stat.label} data-testid={`stat-card-${stat.label.toLowerCase().replace(/\s+/g, '-')}`}>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 text-muted-foreground mb-2">
+              <stat.icon className="h-4 w-4" />
+              <span className="text-sm">{stat.label}</span>
+            </div>
+            <p className="text-2xl font-bold tabular-nums">
+              {stat.format === "currency" 
+                ? `${DEFAULT_CURRENCY_SYMBOL}${stat.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                : stat.value.toLocaleString()
+              }
+            </p>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+interface MonthComparisonProps {
+  currentMonth: number;
+  previousMonth: number;
+  percentChange: number;
+}
+
+export function MonthComparisonCard({ currentMonth, previousMonth, percentChange }: MonthComparisonProps) {
+  const isIncrease = percentChange > 0;
+  const isDecrease = percentChange < 0;
+  const currentMonthName = new Date().toLocaleDateString('en-US', { month: 'long' });
+  const previousMonthName = new Date(new Date().setMonth(new Date().getMonth() - 1)).toLocaleDateString('en-US', { month: 'long' });
+
+  return (
+    <Card data-testid="month-comparison-card">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-lg">Monthly Comparison</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-muted-foreground">{currentMonthName} (This Month)</span>
+            <span className="text-xl font-bold tabular-nums">
+              {DEFAULT_CURRENCY_SYMBOL}{currentMonth.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-muted-foreground">{previousMonthName} (Last Month)</span>
+            <span className="text-lg tabular-nums text-muted-foreground">
+              {DEFAULT_CURRENCY_SYMBOL}{previousMonth.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+          </div>
+          <div className="border-t pt-4">
+            <div className="flex items-center gap-2">
+              {isIncrease && <TrendingUp className="h-5 w-5 text-destructive" />}
+              {isDecrease && <TrendingDown className="h-5 w-5 text-green-500" />}
+              {!isIncrease && !isDecrease && <div className="h-5 w-5" />}
+              <span className={`text-lg font-semibold ${isIncrease ? 'text-destructive' : isDecrease ? 'text-green-500' : ''}`}>
+                {percentChange > 0 ? '+' : ''}{percentChange.toFixed(1)}%
+              </span>
+              <span className="text-sm text-muted-foreground">
+                {isIncrease ? 'more than last month' : isDecrease ? 'less than last month' : 'same as last month'}
+              </span>
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+interface WeeklyBreakdownData {
+  dayOfWeek: string;
+  total: number;
+}
+
+interface WeeklyBreakdownChartProps {
+  data: WeeklyBreakdownData[];
+  title?: string;
+}
+
+export function WeeklyBreakdownChart({ data, title = "Spending by Day of Week" }: WeeklyBreakdownChartProps) {
+  const chartData = data.map(d => ({
+    name: d.dayOfWeek.slice(0, 3),
+    amount: d.total,
+  }));
+
+  return (
+    <Card data-testid="chart-weekly-breakdown">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-lg">{title}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="h-64">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={chartData}>
+              <XAxis
+                dataKey="name"
+                stroke="hsl(var(--muted-foreground))"
+                fontSize={12}
+                tickLine={false}
+                axisLine={false}
+              />
+              <YAxis
+                stroke="hsl(var(--muted-foreground))"
+                fontSize={12}
+                tickLine={false}
+                axisLine={false}
+                tickFormatter={(value) => `${DEFAULT_CURRENCY_SYMBOL}${value}`}
+              />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: "hsl(var(--popover))",
+                  border: "1px solid hsl(var(--border))",
+                  borderRadius: "8px",
+                }}
+                formatter={(value: number) => [`${DEFAULT_CURRENCY_SYMBOL}${value.toFixed(2)}`, "Amount"]}
+              />
+              <Bar
+                dataKey="amount"
+                fill="hsl(var(--chart-3))"
+                radius={[4, 4, 0, 0]}
               />
             </BarChart>
           </ResponsiveContainer>

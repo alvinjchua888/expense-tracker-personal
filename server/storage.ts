@@ -39,6 +39,9 @@ export interface IStorage {
   
   getCategorySpending(userId: string): Promise<{ categoryId: number; name: string; total: number }[]>;
   getSpendingByPeriod(userId: string, startDate: Date, endDate: Date): Promise<{ date: string; total: number }[]>;
+  getSummaryStats(userId: string): Promise<{ totalSpending: number; avgPerDay: number; highestExpense: number; transactionCount: number; avgPerTransaction: number }>;
+  getMonthlyComparison(userId: string): Promise<{ currentMonth: number; previousMonth: number; percentChange: number }>;
+  getWeeklyBreakdown(userId: string): Promise<{ dayOfWeek: string; total: number }[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -164,6 +167,83 @@ export class DatabaseStorage implements IStorage {
       .orderBy(sql`DATE(${expenses.date})`);
     
     return result;
+  }
+
+  async getSummaryStats(userId: string): Promise<{ totalSpending: number; avgPerDay: number; highestExpense: number; transactionCount: number; avgPerTransaction: number }> {
+    const result = await db
+      .select({
+        totalSpending: sql<number>`COALESCE(SUM(${expenses.amount}), 0)`,
+        highestExpense: sql<number>`COALESCE(MAX(${expenses.amount}), 0)`,
+        transactionCount: sql<number>`COUNT(*)`,
+        avgPerTransaction: sql<number>`COALESCE(AVG(${expenses.amount}), 0)`,
+        distinctDays: sql<number>`COUNT(DISTINCT DATE(${expenses.date}))`,
+      })
+      .from(expenses)
+      .where(eq(expenses.userId, userId));
+    
+    const stats = result[0];
+    const avgPerDay = stats.distinctDays > 0 ? stats.totalSpending / stats.distinctDays : 0;
+    
+    return {
+      totalSpending: Number(stats.totalSpending),
+      avgPerDay: Number(avgPerDay),
+      highestExpense: Number(stats.highestExpense),
+      transactionCount: Number(stats.transactionCount),
+      avgPerTransaction: Number(stats.avgPerTransaction),
+    };
+  }
+
+  async getMonthlyComparison(userId: string): Promise<{ currentMonth: number; previousMonth: number; percentChange: number }> {
+    const now = new Date();
+    const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const previousMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const previousMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+
+    const [currentResult] = await db
+      .select({ total: sql<number>`COALESCE(SUM(${expenses.amount}), 0)` })
+      .from(expenses)
+      .where(and(
+        eq(expenses.userId, userId), 
+        gte(expenses.date, currentMonthStart),
+        lte(expenses.date, nextMonthStart)
+      ));
+    
+    const [previousResult] = await db
+      .select({ total: sql<number>`COALESCE(SUM(${expenses.amount}), 0)` })
+      .from(expenses)
+      .where(and(
+        eq(expenses.userId, userId),
+        gte(expenses.date, previousMonthStart),
+        lte(expenses.date, previousMonthEnd)
+      ));
+
+    const currentMonth = Number(currentResult?.total || 0);
+    const previousMonth = Number(previousResult?.total || 0);
+    const percentChange = previousMonth > 0 ? ((currentMonth - previousMonth) / previousMonth) * 100 : 0;
+
+    return { currentMonth, previousMonth, percentChange };
+  }
+
+  async getWeeklyBreakdown(userId: string): Promise<{ dayOfWeek: string; total: number }[]> {
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    
+    const result = await db
+      .select({
+        dayIndex: sql<number>`EXTRACT(DOW FROM ${expenses.date})`,
+        total: sql<number>`COALESCE(SUM(${expenses.amount}), 0)`,
+      })
+      .from(expenses)
+      .where(eq(expenses.userId, userId))
+      .groupBy(sql`EXTRACT(DOW FROM ${expenses.date})`)
+      .orderBy(sql`EXTRACT(DOW FROM ${expenses.date})`);
+
+    const breakdown = dayNames.map((day, index) => {
+      const found = result.find(r => Number(r.dayIndex) === index);
+      return { dayOfWeek: day, total: found ? Number(found.total) : 0 };
+    });
+
+    return breakdown;
   }
 }
 
