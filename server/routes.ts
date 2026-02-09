@@ -269,6 +269,95 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/analytics/period-spending", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      const view = req.query.view as string || "year";
+      const year = req.query.year ? parseInt(req.query.year as string) : undefined;
+      const month = req.query.month ? parseInt(req.query.month as string) : undefined;
+
+      let data;
+      if (view === "day" && year && month) {
+        data = await storage.getSpendingByDay(userId, year, month);
+      } else if (view === "month" && year) {
+        data = await storage.getSpendingByMonth(userId, year);
+      } else {
+        data = await storage.getSpendingByYear(userId);
+      }
+
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching period spending:", error);
+      res.status(500).json({ error: "Failed to fetch period spending" });
+    }
+  });
+
+  app.get("/api/analytics/annual-report", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      const year = parseInt(req.query.year as string) || new Date().getFullYear();
+      const report = await storage.getAnnualReport(userId, year);
+      res.json(report);
+    } catch (error) {
+      console.error("Error fetching annual report:", error);
+      res.status(500).json({ error: "Failed to fetch annual report" });
+    }
+  });
+
+  app.post("/api/analytics/email-report", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { year, email } = req.body;
+      
+      if (!email) {
+        return res.status(400).json({ error: "Email address is required" });
+      }
+      if (!year) {
+        return res.status(400).json({ error: "Year is required" });
+      }
+
+      const user = await storage.getUser(userId);
+      const report = await storage.getAnnualReport(userId, year);
+
+      const currencySymbol = "PHP";
+      let reportText = `Annual Expense Report - ${year}\n`;
+      reportText += `${"=".repeat(50)}\n\n`;
+      reportText += `Prepared for: ${user?.firstName || ''} ${user?.lastName || ''}\n`;
+      reportText += `Total Spending: ${currencySymbol} ${report.grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+      reportText += `Total Transactions: ${report.transactionCount}\n\n`;
+
+      reportText += `Spending by Category\n`;
+      reportText += `${"-".repeat(40)}\n`;
+      report.categoryTotals.forEach(cat => {
+        const pct = report.grandTotal > 0 ? ((cat.total / report.grandTotal) * 100).toFixed(1) : '0.0';
+        reportText += `${cat.name.padEnd(20)} ${currencySymbol} ${cat.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).padStart(12)} (${pct}%)\n`;
+      });
+
+      reportText += `\nRecent Transactions (showing up to 50)\n`;
+      reportText += `${"-".repeat(60)}\n`;
+      report.expenses.slice(0, 50).forEach(exp => {
+        const date = new Date(exp.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        reportText += `${date.padEnd(10)} ${(exp.categoryName || 'Uncategorized').padEnd(15)} ${currencySymbol} ${exp.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).padStart(12)}  ${exp.description || ''}\n`;
+      });
+
+      if (report.expenses.length > 50) {
+        reportText += `\n... and ${report.expenses.length - 50} more transactions\n`;
+      }
+
+      const mailtoSubject = encodeURIComponent(`Annual Expense Report - ${year}`);
+      const mailtoBody = encodeURIComponent(reportText);
+
+      res.json({
+        success: true,
+        report: reportText,
+        mailto: `mailto:${email}?subject=${mailtoSubject}&body=${mailtoBody}`,
+      });
+    } catch (error) {
+      console.error("Error generating email report:", error);
+      res.status(500).json({ error: "Failed to generate email report" });
+    }
+  });
+
   const receiptScanSchema = z.object({
     image: z.string(),
   });
