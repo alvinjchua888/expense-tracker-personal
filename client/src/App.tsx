@@ -6,6 +6,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { CurrencySelector } from "@/components/CurrencySelector";
+import { CurrencyProvider } from "@/hooks/useCurrency";
 import { useAuth } from "@/hooks/useAuth";
 import Dashboard from "@/pages/Dashboard";
 import Expenses from "@/pages/Expenses";
@@ -47,7 +49,10 @@ function MainApp() {
         <div className="flex flex-col flex-1 overflow-hidden">
           <header className="flex items-center justify-between gap-4 p-4 border-b h-16">
             <SidebarTrigger data-testid="button-sidebar-toggle" />
-            <ThemeToggle />
+            <div className="flex items-center gap-3 flex-wrap">
+              <CurrencySelector />
+              <ThemeToggle />
+            </div>
           </header>
           <main className="flex-1 overflow-auto p-6">
             <div className="max-w-7xl mx-auto">
@@ -64,7 +69,9 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <MainApp />
+        <CurrencyProvider>
+          <MainApp />
+        </CurrencyProvider>
         <Toaster />
       </TooltipProvider>
     </QueryClientProvider>

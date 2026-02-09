@@ -2,7 +2,16 @@
 
 ## Overview
 
-A full-stack daily expense tracking application built with React and Express. The app allows users to track expenses, categorize spending, upload receipts with AI-powered data extraction, and view analytics through interactive charts. Key features include expense CRUD operations, category management, date range filtering, spending trends visualization, and dark mode support.
+A full-stack daily expense tracking application built with React and Express. The app allows users to track expenses, categorize spending, upload receipts with AI-powered data extraction, and view analytics through interactive charts. Key features include expense CRUD operations, category management, date range filtering, spending trends visualization, multicurrency support with real-time exchange rates, and dark mode support.
+
+### Multicurrency Support
+- Default currency is Philippine Peso (PHP)
+- Users can switch display currency via the header selector (persisted in localStorage)
+- Exchange rates fetched from Frankfurter API (free, no key) with 1-hour server-side caching and fallback rates
+- Backend endpoint: GET /api/exchange-rates (returns rates with PHP as base)
+- Frontend: CurrencyProvider context (client/src/hooks/useCurrency.tsx) provides convert/formatAmount functions
+- All dashboard stats, expense items, and analytics charts convert amounts based on selected display currency
+- Expenses are stored in their original currency; conversion is display-only
 
 ## User Preferences
 
