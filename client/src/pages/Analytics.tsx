@@ -32,7 +32,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { CURRENCY_SYMBOLS } from "@shared/schema";
+import { useCurrency } from "@/hooks/useCurrency";
 import { Mail, ChevronLeft, BarChart3 } from "lucide-react";
 import {
   BarChart,
@@ -42,8 +42,6 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-
-const DEFAULT_CURRENCY_SYMBOL = CURRENCY_SYMBOLS.PHP;
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const FULL_MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -57,6 +55,7 @@ export default function Analytics() {
   const [emailAddress, setEmailAddress] = useState("");
   const [reportYear, setReportYear] = useState<number>(new Date().getFullYear());
   const { toast } = useToast();
+  const { symbol, convert } = useCurrency();
 
   const { data: periodData = [], isLoading: periodLoading } = useQuery<{ period: string; total: number; count: number }[]>({
     queryKey: ["/api/analytics/period-spending", periodView, selectedYear, selectedMonth],
@@ -127,13 +126,13 @@ export default function Analytics() {
 
   const categoryData = categorySpending
     .filter(c => Number(c.total) > 0)
-    .map(c => ({ name: c.name, value: Number(c.total) }));
+    .map(c => ({ name: c.name, value: convert(Number(c.total)) }));
 
   const topCategoriesData = categorySpending
     .filter(c => Number(c.total) > 0)
     .sort((a, b) => Number(b.total) - Number(a.total))
     .slice(0, 5)
-    .map(c => ({ name: c.name, amount: Number(c.total) }));
+    .map(c => ({ name: c.name, amount: convert(Number(c.total)) }));
 
   const handleBarClick = (data: any) => {
     if (!data) return;
@@ -166,7 +165,7 @@ export default function Analytics() {
     return `Daily Breakdown - ${FULL_MONTH_NAMES[selectedMonth - 1]} ${selectedYear}`;
   };
 
-  const periodTotal = periodData.reduce((sum, d) => sum + d.total, 0);
+  const periodTotal = periodData.reduce((sum, d) => sum + convert(d.total), 0);
   const periodTransactions = periodData.reduce((sum, d) => sum + d.count, 0);
 
   const currentYear = new Date().getFullYear();
@@ -256,11 +255,11 @@ export default function Analytics() {
         <div className="space-y-6">
           {summaryStats && (
             <SummaryStatsCards
-              totalSpending={summaryStats.totalSpending}
-              avgPerDay={summaryStats.avgPerDay}
-              highestExpense={summaryStats.highestExpense}
+              totalSpending={convert(summaryStats.totalSpending)}
+              avgPerDay={convert(summaryStats.avgPerDay)}
+              highestExpense={convert(summaryStats.highestExpense)}
               transactionCount={summaryStats.transactionCount}
-              avgPerTransaction={summaryStats.avgPerTransaction}
+              avgPerTransaction={convert(summaryStats.avgPerTransaction)}
             />
           )}
 
@@ -276,7 +275,7 @@ export default function Analytics() {
                   <div>
                     <CardTitle className="text-lg">{getPeriodTitle()}</CardTitle>
                     <p className="text-sm text-muted-foreground mt-1">
-                      {DEFAULT_CURRENCY_SYMBOL}{periodTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} across {periodTransactions} transactions
+                      {symbol}{periodTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} across {periodTransactions} transactions
                       {periodView !== "day" && " - Click a bar to drill down"}
                     </p>
                   </div>
@@ -332,7 +331,7 @@ export default function Analytics() {
               <div className="h-72">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
-                    data={periodData.map(d => ({ name: d.period, amount: d.total, count: d.count }))}
+                    data={periodData.map(d => ({ name: d.period, amount: convert(d.total), count: d.count }))}
                     onClick={periodView !== "day" ? handleBarClick : undefined}
                     style={periodView !== "day" ? { cursor: "pointer" } : undefined}
                   >
@@ -348,7 +347,7 @@ export default function Analytics() {
                       fontSize={12}
                       tickLine={false}
                       axisLine={false}
-                      tickFormatter={(value) => `${DEFAULT_CURRENCY_SYMBOL}${value}`}
+                      tickFormatter={(value) => `${symbol}${value}`}
                     />
                     <Tooltip
                       contentStyle={{
@@ -356,7 +355,7 @@ export default function Analytics() {
                         border: "1px solid hsl(var(--border))",
                         borderRadius: "8px",
                       }}
-                      formatter={(value: number) => [`${DEFAULT_CURRENCY_SYMBOL}${value.toFixed(2)}`, "Amount"]}
+                      formatter={(value: number) => [`${symbol}${value.toFixed(2)}`, "Amount"]}
                     />
                     <Bar
                       dataKey="amount"
@@ -372,13 +371,13 @@ export default function Analytics() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {monthlyComparison && (
               <MonthComparisonCard
-                currentMonth={monthlyComparison.currentMonth}
-                previousMonth={monthlyComparison.previousMonth}
+                currentMonth={convert(monthlyComparison.currentMonth)}
+                previousMonth={convert(monthlyComparison.previousMonth)}
                 percentChange={monthlyComparison.percentChange}
               />
             )}
             <WeeklyBreakdownChart
-              data={weeklyBreakdown.length > 0 ? weeklyBreakdown : [{ dayOfWeek: "No data", total: 0 }]}
+              data={weeklyBreakdown.length > 0 ? weeklyBreakdown.map(d => ({ ...d, total: convert(d.total) })) : [{ dayOfWeek: "No data", total: 0 }]}
               title="Spending by Day of Week"
             />
             <CategoryPieChart

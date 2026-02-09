@@ -529,5 +529,47 @@ Only respond with valid JSON, no additional text.`,
     }
   });
 
+  const rateCache: { rates: Record<string, number>; base: string; timestamp: number } = {
+    rates: {},
+    base: "PHP",
+    timestamp: 0,
+  };
+  const CACHE_DURATION = 60 * 60 * 1000;
+
+  app.get("/api/exchange-rates", async (_req: any, res: Response) => {
+    try {
+      const now = Date.now();
+      if (rateCache.timestamp > 0 && (now - rateCache.timestamp) < CACHE_DURATION && Object.keys(rateCache.rates).length > 0) {
+        return res.json({ base: rateCache.base, rates: rateCache.rates, cached: true });
+      }
+
+      const response = await fetch("https://api.frankfurter.dev/v1/latest?base=PHP");
+      if (!response.ok) {
+        if (Object.keys(rateCache.rates).length > 0) {
+          return res.json({ base: rateCache.base, rates: rateCache.rates, cached: true });
+        }
+        throw new Error("Failed to fetch exchange rates");
+      }
+
+      const data = await response.json();
+      rateCache.rates = { PHP: 1, ...data.rates };
+      rateCache.base = "PHP";
+      rateCache.timestamp = now;
+
+      res.json({ base: "PHP", rates: rateCache.rates });
+    } catch (error) {
+      console.error("Error fetching exchange rates:", error);
+      if (Object.keys(rateCache.rates).length > 0) {
+        return res.json({ base: rateCache.base, rates: rateCache.rates, cached: true });
+      }
+      const fallbackRates: Record<string, number> = {
+        PHP: 1, USD: 0.0175, EUR: 0.0161, GBP: 0.0138,
+        JPY: 2.62, CAD: 0.0245, AUD: 0.0272, CHF: 0.0155,
+        CNY: 0.127, INR: 1.47, MXN: 0.356,
+      };
+      res.json({ base: "PHP", rates: fallbackRates, fallback: true });
+    }
+  });
+
   return httpServer;
 }

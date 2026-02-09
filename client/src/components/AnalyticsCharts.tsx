@@ -11,10 +11,8 @@ import {
   Bar,
   Legend,
 } from "recharts";
-import { CURRENCY_SYMBOLS } from "@shared/schema";
+import { useCurrency } from "@/hooks/useCurrency";
 import { TrendingUp, TrendingDown, Wallet, Calendar, CreditCard, DollarSign } from "lucide-react";
-
-const DEFAULT_CURRENCY_SYMBOL = CURRENCY_SYMBOLS.PHP;
 
 const COLORS = [
   "hsl(var(--chart-1))",
@@ -40,6 +38,7 @@ interface SpendingTrendChartProps {
 }
 
 export function SpendingTrendChart({ data, title = "Spending Trend" }: SpendingTrendChartProps) {
+  const { symbol } = useCurrency();
   return (
     <Card data-testid="chart-spending-trend">
       <CardHeader className="pb-2">
@@ -61,7 +60,7 @@ export function SpendingTrendChart({ data, title = "Spending Trend" }: SpendingT
                 fontSize={12}
                 tickLine={false}
                 axisLine={false}
-                tickFormatter={(value) => `${DEFAULT_CURRENCY_SYMBOL}${value}`}
+                tickFormatter={(value) => `${symbol}${value}`}
               />
               <Tooltip
                 contentStyle={{
@@ -69,7 +68,7 @@ export function SpendingTrendChart({ data, title = "Spending Trend" }: SpendingT
                   border: "1px solid hsl(var(--border))",
                   borderRadius: "8px",
                 }}
-                formatter={(value: number) => [`${DEFAULT_CURRENCY_SYMBOL}${value.toFixed(2)}`, "Amount"]}
+                formatter={(value: number) => [`${symbol}${value.toFixed(2)}`, "Amount"]}
               />
               <Bar
                 dataKey="amount"
@@ -90,6 +89,7 @@ interface CategoryPieChartProps {
 }
 
 export function CategoryPieChart({ data, title = "Spending by Category" }: CategoryPieChartProps) {
+  const { symbol } = useCurrency();
   const total = data.reduce((sum, item) => sum + item.value, 0);
 
   return (
@@ -122,7 +122,7 @@ export function CategoryPieChart({ data, title = "Spending by Category" }: Categ
                     borderRadius: "8px",
                   }}
                   formatter={(value: number) => [
-                    `${DEFAULT_CURRENCY_SYMBOL}${value.toFixed(2)} (${((value / total) * 100).toFixed(1)}%)`,
+                    `${symbol}${value.toFixed(2)} (${((value / total) * 100).toFixed(1)}%)`,
                     "",
                   ]}
                 />
@@ -164,6 +164,7 @@ export function MonthlyComparisonChart({
   data,
   title = "Monthly Comparison",
 }: MonthlyComparisonChartProps) {
+  const { symbol } = useCurrency();
   return (
     <Card data-testid="chart-monthly-comparison">
       <CardHeader className="pb-2">
@@ -185,7 +186,7 @@ export function MonthlyComparisonChart({
                 fontSize={12}
                 tickLine={false}
                 axisLine={false}
-                tickFormatter={(value) => `${DEFAULT_CURRENCY_SYMBOL}${value}`}
+                tickFormatter={(value) => `${symbol}${value}`}
               />
               <Tooltip
                 contentStyle={{
@@ -193,7 +194,7 @@ export function MonthlyComparisonChart({
                   border: "1px solid hsl(var(--border))",
                   borderRadius: "8px",
                 }}
-                formatter={(value: number) => [`${DEFAULT_CURRENCY_SYMBOL}${value.toFixed(2)}`]}
+                formatter={(value: number) => [`${symbol}${value.toFixed(2)}`]}
               />
               <Legend />
               <Bar
@@ -227,6 +228,7 @@ interface CategoryBarChartProps {
 }
 
 export function CategoryBarChart({ data, title = "Top Categories" }: CategoryBarChartProps) {
+  const { symbol } = useCurrency();
   return (
     <Card data-testid="chart-category-bar">
       <CardHeader className="pb-2">
@@ -242,7 +244,7 @@ export function CategoryBarChart({ data, title = "Top Categories" }: CategoryBar
                 fontSize={12}
                 tickLine={false}
                 axisLine={false}
-                tickFormatter={(value) => `${DEFAULT_CURRENCY_SYMBOL}${value}`}
+                tickFormatter={(value) => `${symbol}${value}`}
               />
               <YAxis
                 type="category"
@@ -259,7 +261,7 @@ export function CategoryBarChart({ data, title = "Top Categories" }: CategoryBar
                   border: "1px solid hsl(var(--border))",
                   borderRadius: "8px",
                 }}
-                formatter={(value: number) => [`${DEFAULT_CURRENCY_SYMBOL}${value.toFixed(2)}`, "Amount"]}
+                formatter={(value: number) => [`${symbol}${value.toFixed(2)}`, "Amount"]}
               />
               <Bar
                 dataKey="amount"
@@ -283,6 +285,7 @@ interface SummaryStatsProps {
 }
 
 export function SummaryStatsCards({ totalSpending, avgPerDay, highestExpense, transactionCount, avgPerTransaction }: SummaryStatsProps) {
+  const { symbol } = useCurrency();
   const stats = [
     { label: "Total Spending", value: totalSpending, icon: Wallet, format: "currency" },
     { label: "Avg. per Day", value: avgPerDay, icon: Calendar, format: "currency" },
@@ -301,7 +304,7 @@ export function SummaryStatsCards({ totalSpending, avgPerDay, highestExpense, tr
             </div>
             <p className="text-2xl font-bold tabular-nums">
               {stat.format === "currency" 
-                ? `${DEFAULT_CURRENCY_SYMBOL}${stat.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                ? `${symbol}${stat.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                 : stat.value.toLocaleString()
               }
             </p>
@@ -319,6 +322,7 @@ interface MonthComparisonProps {
 }
 
 export function MonthComparisonCard({ currentMonth, previousMonth, percentChange }: MonthComparisonProps) {
+  const { symbol } = useCurrency();
   const isIncrease = percentChange > 0;
   const isDecrease = percentChange < 0;
   const currentMonthName = new Date().toLocaleDateString('en-US', { month: 'long' });
@@ -334,13 +338,13 @@ export function MonthComparisonCard({ currentMonth, previousMonth, percentChange
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">{currentMonthName} (This Month)</span>
             <span className="text-xl font-bold tabular-nums">
-              {DEFAULT_CURRENCY_SYMBOL}{currentMonth.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {symbol}{currentMonth.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">{previousMonthName} (Last Month)</span>
             <span className="text-lg tabular-nums text-muted-foreground">
-              {DEFAULT_CURRENCY_SYMBOL}{previousMonth.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {symbol}{previousMonth.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
           <div className="border-t pt-4">
@@ -373,6 +377,7 @@ interface WeeklyBreakdownChartProps {
 }
 
 export function WeeklyBreakdownChart({ data, title = "Spending by Day of Week" }: WeeklyBreakdownChartProps) {
+  const { symbol } = useCurrency();
   const chartData = data.map(d => ({
     name: d.dayOfWeek.slice(0, 3),
     amount: d.total,
@@ -399,7 +404,7 @@ export function WeeklyBreakdownChart({ data, title = "Spending by Day of Week" }
                 fontSize={12}
                 tickLine={false}
                 axisLine={false}
-                tickFormatter={(value) => `${DEFAULT_CURRENCY_SYMBOL}${value}`}
+                tickFormatter={(value) => `${symbol}${value}`}
               />
               <Tooltip
                 contentStyle={{
@@ -407,7 +412,7 @@ export function WeeklyBreakdownChart({ data, title = "Spending by Day of Week" }
                   border: "1px solid hsl(var(--border))",
                   borderRadius: "8px",
                 }}
-                formatter={(value: number) => [`${DEFAULT_CURRENCY_SYMBOL}${value.toFixed(2)}`, "Amount"]}
+                formatter={(value: number) => [`${symbol}${value.toFixed(2)}`, "Amount"]}
               />
               <Bar
                 dataKey="amount"

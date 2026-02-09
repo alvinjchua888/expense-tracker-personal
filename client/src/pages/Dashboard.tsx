@@ -6,6 +6,7 @@ import { ExpenseForm } from "@/components/ExpenseForm";
 import { ReceiptUpload } from "@/components/ReceiptUpload";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useCurrency } from "@/hooks/useCurrency";
 import { CURRENCY_SYMBOLS, type Currency, type Expense as DbExpense, type Category } from "@shared/schema";
 
 interface Expense {
@@ -59,30 +60,21 @@ export default function Dashboard() {
     hasReceipt: e.hasReceipt || false,
   }));
 
-  const primaryCurrency = expenses.length > 0 
-    ? (expenses.reduce((acc, e) => {
-        acc[e.currency] = (acc[e.currency] || 0) + 1;
-        return acc;
-      }, {} as Record<Currency, number>))
-    : null;
-  const mostUsedCurrency = primaryCurrency 
-    ? (Object.entries(primaryCurrency).sort((a, b) => b[1] - a[1])[0]?.[0] as Currency) || "USD"
-    : "USD";
-  const currencySymbol = CURRENCY_SYMBOLS[mostUsedCurrency];
+  const { convert, formatAmount, symbol: currencySymbol } = useCurrency();
   
-  const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
+  const totalExpenses = expenses.reduce((sum, e) => sum + convert(e.amount, e.currency), 0);
   const thisMonth = expenses
     .filter((e) => {
       const now = new Date();
       return e.date.getMonth() === now.getMonth() && e.date.getFullYear() === now.getFullYear();
     })
-    .reduce((sum, e) => sum + e.amount, 0);
+    .reduce((sum, e) => sum + convert(e.amount, e.currency), 0);
   const thisWeek = expenses
     .filter((e) => {
       const weekAgo = new Date(Date.now() - 7 * 86400000);
       return e.date >= weekAgo;
     })
-    .reduce((sum, e) => sum + e.amount, 0);
+    .reduce((sum, e) => sum + convert(e.amount, e.currency), 0);
 
   const handleAddExpense = (data: { amount: string; currency: string; merchant: string; description?: string; category: string; date: Date }) => {
     const categoryId = categories.find(c => c.name.toLowerCase() === data.category.toLowerCase())?.id;

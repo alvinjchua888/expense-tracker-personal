@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { CategoryBadge } from "./CategoryBadge";
 import { format } from "date-fns";
+import { useCurrency } from "@/hooks/useCurrency";
 import { CURRENCY_SYMBOLS, type Currency } from "@shared/schema";
 
 export interface Expense {
@@ -28,6 +29,10 @@ interface ExpenseItemProps {
 }
 
 export function ExpenseItem({ expense, onEdit, onDelete }: ExpenseItemProps) {
+  const { formatAmount, displayCurrency } = useCurrency();
+  const originalSymbol = CURRENCY_SYMBOLS[expense.currency];
+  const showOriginal = expense.currency !== displayCurrency;
+  
   return (
     <div
       className="flex items-center justify-between gap-4 p-4 hover-elevate rounded-md"
@@ -50,8 +55,13 @@ export function ExpenseItem({ expense, onEdit, onDelete }: ExpenseItemProps) {
       <div className="flex items-center gap-4">
         <div className="text-right">
           <p className="font-semibold tabular-nums">
-            {CURRENCY_SYMBOLS[expense.currency]}{expense.amount.toFixed(2)}
+            {formatAmount(expense.amount, expense.currency)}
           </p>
+          {showOriginal && (
+            <p className="text-xs text-muted-foreground tabular-nums">
+              {originalSymbol}{expense.amount.toFixed(2)} {expense.currency}
+            </p>
+          )}
           <p className="text-xs text-muted-foreground">
             {format(expense.date, "MMM d, yyyy")}
           </p>
