@@ -42,6 +42,10 @@ export interface IStorage {
   getSummaryStats(userId: string): Promise<{ totalSpending: number; avgPerDay: number; highestExpense: number; transactionCount: number; avgPerTransaction: number }>;
   getMonthlyComparison(userId: string): Promise<{ currentMonth: number; previousMonth: number; percentChange: number }>;
   getWeeklyBreakdown(userId: string): Promise<{ dayOfWeek: string; total: number }[]>;
+  getSpendingByYear(userId: string): Promise<{ period: string; total: number; count: number }[]>;
+  getSpendingByMonth(userId: string, year: number): Promise<{ period: string; total: number; count: number }[]>;
+  getSpendingByDay(userId: string, year: number, month: number): Promise<{ period: string; total: number; count: number }[]>;
+  getAnnualReport(userId: string, year: number): Promise<{ expenses: any[]; categoryTotals: { name: string; total: number }[]; grandTotal: number; transactionCount: number }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -195,18 +199,19 @@ export class DatabaseStorage implements IStorage {
 
   async getMonthlyComparison(userId: string): Promise<{ currentMonth: number; previousMonth: number; percentChange: number }> {
     const now = new Date();
-    const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-    const previousMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const previousMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+    const currentYear = now.getFullYear();
+    const currentMonthNum = now.getMonth() + 1;
+    const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const prevYear = prevDate.getFullYear();
+    const prevMonthNum = prevDate.getMonth() + 1;
 
     const [currentResult] = await db
       .select({ total: sql<number>`COALESCE(SUM(${expenses.amount}), 0)` })
       .from(expenses)
       .where(and(
-        eq(expenses.userId, userId), 
-        gte(expenses.date, currentMonthStart),
-        lte(expenses.date, nextMonthStart)
+        eq(expenses.userId, userId),
+        sql`EXTRACT(YEAR FROM ${expenses.date}) = ${currentYear}`,
+        sql`EXTRACT(MONTH FROM ${expenses.date}) = ${currentMonthNum}`
       ));
     
     const [previousResult] = await db
@@ -214,8 +219,8 @@ export class DatabaseStorage implements IStorage {
       .from(expenses)
       .where(and(
         eq(expenses.userId, userId),
-        gte(expenses.date, previousMonthStart),
-        lte(expenses.date, previousMonthEnd)
+        sql`EXTRACT(YEAR FROM ${expenses.date}) = ${prevYear}`,
+        sql`EXTRACT(MONTH FROM ${expenses.date}) = ${prevMonthNum}`
       ));
 
     const currentMonth = Number(currentResult?.total || 0);
@@ -244,6 +249,116 @@ export class DatabaseStorage implements IStorage {
     });
 
     return breakdown;
+  }
+
+  async getSpendingByYear(userId: string): Promise<{ period: string; total: number; count: number }[]> {
+    const result = await db
+      .select({
+        period: sql<string>`EXTRACT(YEAR FROM ${expenses.date})::text`,
+        total: sql<number>`COALESCE(SUM(${expenses.amount}), 0)`,
+        count: sql<number>`COUNT(*)`,
+      })
+      .from(expenses)
+      .where(eq(expenses.userId, userId))
+      .groupBy(sql`EXTRACT(YEAR FROM ${expenses.date})`)
+      .orderBy(sql`EXTRACT(YEAR FROM ${expenses.date})`);
+    return result.map(r => ({ period: String(r.period), total: Number(r.total), count: Number(r.count) }));
+  }
+
+  async getSpendingByMonth(userId: string, year: number): Promise<{ period: string; total: number; count: number }[]> {
+    const startDate = new Date(year, 0, 1);
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+    const result = await db
+      .select({
+        monthIndex: sql<number>`EXTRACT(MONTH FROM ${expenses.date})`,
+        total: sql<number>`COALESCE(SUM(${expenses.amount}), 0)`,
+        count: sql<number>`COUNT(*)`,
+      })
+      .from(expenses)
+      .where(and(
+        eq(expenses.userId, userId),
+        sql`EXTRACT(YEAR FROM ${expenses.date}) = ${year}`
+      ))
+      .groupBy(sql`EXTRACT(MONTH FROM ${expenses.date})`)
+      .orderBy(sql`EXTRACT(MONTH FROM ${expenses.date})`);
+
+    return monthNames.map((name, index) => {
+      const found = result.find(r => Number(r.monthIndex) === index + 1);
+      return { period: name, total: found ? Number(found.total) : 0, count: found ? Number(found.count) : 0 };
+    });
+  }
+
+  async getSpendingByDay(userId: string, year: number, month: number): Promise<{ period: string; total: number; count: number }[]> {
+    const daysInMonth = new Date(year, month, 0).getDate();
+
+    const result = await db
+      .select({
+        day: sql<number>`EXTRACT(DAY FROM ${expenses.date})`,
+        total: sql<number>`COALESCE(SUM(${expenses.amount}), 0)`,
+        count: sql<number>`COUNT(*)`,
+      })
+      .from(expenses)
+      .where(and(
+        eq(expenses.userId, userId),
+        sql`EXTRACT(YEAR FROM ${expenses.date}) = ${year}`,
+        sql`EXTRACT(MONTH FROM ${expenses.date}) = ${month}`
+      ))
+      .groupBy(sql`EXTRACT(DAY FROM ${expenses.date})`)
+      .orderBy(sql`EXTRACT(DAY FROM ${expenses.date})`);
+
+    return Array.from({ length: daysInMonth }, (_, i) => {
+      const day = i + 1;
+      const found = result.find(r => Number(r.day) === day);
+      return { period: String(day), total: found ? Number(found.total) : 0, count: found ? Number(found.count) : 0 };
+    });
+  }
+
+  async getAnnualReport(userId: string, year: number): Promise<{ expenses: any[]; categoryTotals: { name: string; total: number }[]; grandTotal: number; transactionCount: number }> {
+    const yearFilter = sql`EXTRACT(YEAR FROM ${expenses.date}) = ${year}`;
+
+    const expenseList = await db
+      .select({
+        id: expenses.id,
+        amount: expenses.amount,
+        description: expenses.description,
+        date: expenses.date,
+        categoryName: categories.name,
+      })
+      .from(expenses)
+      .leftJoin(categories, eq(expenses.categoryId, categories.id))
+      .where(and(
+        eq(expenses.userId, userId),
+        yearFilter
+      ))
+      .orderBy(desc(expenses.date));
+
+    const categoryTotals = await db
+      .select({
+        name: sql<string>`COALESCE(${categories.name}, 'Uncategorized')`,
+        total: sql<number>`COALESCE(SUM(${expenses.amount}), 0)`,
+      })
+      .from(expenses)
+      .leftJoin(categories, eq(expenses.categoryId, categories.id))
+      .where(and(
+        eq(expenses.userId, userId),
+        sql`EXTRACT(YEAR FROM ${expenses.date}) = ${year}`
+      ))
+      .groupBy(categories.name)
+      .orderBy(desc(sql`SUM(${expenses.amount})`));
+
+    const grandTotal = expenseList.reduce((sum, e) => sum + Number(e.amount), 0);
+
+    return {
+      expenses: expenseList.map(e => ({
+        ...e,
+        amount: Number(e.amount),
+        categoryName: e.categoryName || 'Uncategorized',
+      })),
+      categoryTotals: categoryTotals.map(c => ({ name: c.name, total: Number(c.total) })),
+      grandTotal,
+      transactionCount: expenseList.length,
+    };
   }
 }
 
