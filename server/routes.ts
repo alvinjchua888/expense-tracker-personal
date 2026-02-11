@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertCategorySchema, insertExpenseSchema, insertBudgetSchema, insertRecurringExpenseSchema } from "@shared/schema";
+import { insertCategorySchema, insertExpenseSchema, insertBudgetSchema, insertRecurringExpenseSchema, insertDigestPreferencesSchema } from "@shared/schema";
 import { z } from "zod";
 import { openai } from "./replit_integrations/image/client";
 import { setupAuth, isAuthenticated } from "./replitAuth";
@@ -747,6 +747,148 @@ Only respond with valid JSON, no additional text.`,
     } catch (error) {
       console.error("Error generating recurring expenses:", error);
       res.status(500).json({ error: "Failed to generate recurring expenses" });
+    }
+  });
+
+  // Digest endpoints
+  app.get("/api/digest/preferences", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      const prefs = await storage.getDigestPreferences(userId);
+      res.json(prefs || {
+        enabled: false,
+        frequency: "weekly",
+        includeCategories: true,
+        includeBudgetAlerts: true,
+        includeTopMerchants: true,
+        email: null,
+      });
+    } catch (error) {
+      console.error("Error fetching digest preferences:", error);
+      res.status(500).json({ error: "Failed to fetch digest preferences" });
+    }
+  });
+
+  app.put("/api/digest/preferences", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      const parsed = insertDigestPreferencesSchema.safeParse({ ...req.body, userId });
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid digest preferences", details: parsed.error.errors });
+      }
+      const prefs = await storage.upsertDigestPreferences(userId, parsed.data);
+      res.json(prefs);
+    } catch (error) {
+      console.error("Error updating digest preferences:", error);
+      res.status(500).json({ error: "Failed to update digest preferences" });
+    }
+  });
+
+  app.post("/api/digest/preview", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      const options = req.body || {};
+      const content = await storage.generateDigestContent(userId, {
+        includeCategories: options.includeCategories !== false,
+        includeBudgetAlerts: options.includeBudgetAlerts !== false,
+        includeTopMerchants: options.includeTopMerchants !== false,
+      });
+      res.json(content);
+    } catch (error) {
+      console.error("Error generating digest preview:", error);
+      res.status(500).json({ error: "Failed to generate digest preview" });
+    }
+  });
+
+  app.post("/api/digest/send", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { email } = req.body;
+      if (!email || !z.string().email().safeParse(email).success) {
+        return res.status(400).json({ error: "Valid email address is required" });
+      }
+
+      const prefs = await storage.getDigestPreferences(userId);
+      const content = await storage.generateDigestContent(userId, {
+        includeCategories: prefs?.includeCategories !== false,
+        includeBudgetAlerts: prefs?.includeBudgetAlerts !== false,
+        includeTopMerchants: prefs?.includeTopMerchants !== false,
+      });
+
+      const user = await storage.getUser(userId);
+      const frequency = prefs?.frequency || "weekly";
+      const now = new Date();
+
+      let digestText = `Your ${frequency === "daily" ? "Daily" : "Weekly"} Spending Digest\n`;
+      digestText += `${now.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}\n`;
+      digestText += `${"=".repeat(50)}\n\n`;
+
+      // Summary
+      digestText += `SPENDING SUMMARY\n`;
+      digestText += `${"-".repeat(30)}\n`;
+      digestText += `Total spent: PHP ${content.summary.totalSpending.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+      digestText += `Transactions: ${content.summary.transactionCount}\n`;
+      digestText += `Average per day: PHP ${content.summary.avgPerDay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+      digestText += `Highest expense: PHP ${content.summary.highestExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n`;
+
+      // Trend
+      const trendArrow = content.trend.percentChange >= 0 ? "UP" : "DOWN";
+      const trendPct = Math.abs(content.trend.percentChange).toFixed(1);
+      digestText += `MONTHLY TREND\n`;
+      digestText += `${"-".repeat(30)}\n`;
+      digestText += `This month: PHP ${content.trend.currentMonth.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+      digestText += `Last month: PHP ${content.trend.previousMonth.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+      digestText += `Change: ${trendArrow} ${trendPct}%\n\n`;
+
+      // Categories
+      if (content.categories.length > 0) {
+        digestText += `TOP CATEGORIES\n`;
+        digestText += `${"-".repeat(30)}\n`;
+        const catTotal = content.categories.reduce((s, c) => s + c.total, 0);
+        content.categories.forEach(c => {
+          const pct = catTotal > 0 ? ((c.total / catTotal) * 100).toFixed(1) : "0.0";
+          digestText += `${c.name.padEnd(20)} PHP ${c.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).padStart(12)} (${pct}%)\n`;
+        });
+        digestText += `\n`;
+      }
+
+      // Budget alerts
+      if (content.budgetAlerts.length > 0) {
+        digestText += `BUDGET ALERTS\n`;
+        digestText += `${"-".repeat(30)}\n`;
+        content.budgetAlerts.forEach(b => {
+          const icon = b.percentage >= 100 ? "[OVER]" : "[WARN]";
+          digestText += `${icon} ${b.categoryName}: PHP ${b.spent.toLocaleString(undefined, { minimumFractionDigits: 2 })} / PHP ${b.monthlyLimit.toLocaleString(undefined, { minimumFractionDigits: 2 })} (${b.percentage}%)\n`;
+        });
+        digestText += `\n`;
+      }
+
+      // Top merchants
+      if (content.topMerchants.length > 0) {
+        digestText += `TOP MERCHANTS\n`;
+        digestText += `${"-".repeat(30)}\n`;
+        content.topMerchants.forEach(m => {
+          digestText += `${m.merchant.padEnd(20)} ${m.count} transactions, PHP ${m.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+        });
+        digestText += `\n`;
+      }
+
+      digestText += `---\nGenerated by ExpenseTracker\n`;
+
+      const subject = encodeURIComponent(`Your ${frequency === "daily" ? "Daily" : "Weekly"} Spending Digest - ${now.toLocaleDateString()}`);
+      const body = encodeURIComponent(digestText);
+
+      // Update lastSentAt
+      await storage.upsertDigestPreferences(userId, { lastSentAt: now } as any);
+
+      res.json({
+        success: true,
+        digest: digestText,
+        mailto: `mailto:${email}?subject=${subject}&body=${body}`,
+      });
+    } catch (error) {
+      console.error("Error sending digest:", error);
+      res.status(500).json({ error: "Failed to send digest" });
     }
   });
 

@@ -16,6 +16,7 @@ import Categories from "@/pages/Categories";
 import AIRecommendations from "@/pages/AIRecommendations";
 import Budgets from "@/pages/Budgets";
 import RecurringExpenses from "@/pages/RecurringExpenses";
+import DigestSettings from "@/pages/DigestSettings";
 import Landing from "@/pages/Landing";
 import NotFound from "@/pages/not-found";
 
@@ -28,6 +29,7 @@ function AuthenticatedRoutes() {
       <Route path="/categories" component={Categories} />
       <Route path="/budgets" component={Budgets} />
       <Route path="/recurring-expenses" component={RecurringExpenses} />
+      <Route path="/digest" component={DigestSettings} />
       <Route path="/ai-recommendations" component={AIRecommendations} />
       <Route component={NotFound} />
     </Switch>

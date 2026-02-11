@@ -4,7 +4,8 @@ import {
   type Expense, type InsertExpense,
   type Budget, type InsertBudget,
   type RecurringExpense, type InsertRecurringExpense,
-  users, categories, expenses, budgets, recurringExpenses
+  type DigestPreferences, type InsertDigestPreferences,
+  users, categories, expenses, budgets, recurringExpenses, digestPreferences
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, gte, lte, and, sql, or, ilike } from "drizzle-orm";
@@ -561,6 +562,100 @@ export class DatabaseStorage implements IStorage {
         break;
     }
     return next;
+  }
+
+  // Digest preferences methods
+  async getDigestPreferences(userId: string): Promise<DigestPreferences | undefined> {
+    const [prefs] = await db.select().from(digestPreferences).where(eq(digestPreferences.userId, userId));
+    return prefs || undefined;
+  }
+
+  async upsertDigestPreferences(userId: string, data: Partial<InsertDigestPreferences>): Promise<DigestPreferences> {
+    const [result] = await db
+      .insert(digestPreferences)
+      .values({ ...data, userId })
+      .onConflictDoUpdate({
+        target: digestPreferences.userId,
+        set: { ...data },
+      })
+      .returning();
+    return result;
+  }
+
+  async getTopMerchants(userId: string, limit: number = 5): Promise<{ merchant: string; count: number; total: number }[]> {
+    const result = await db
+      .select({
+        merchant: expenses.merchant,
+        count: sql<number>`COUNT(*)`,
+        total: sql<number>`COALESCE(SUM(${expenses.amount}), 0)`,
+      })
+      .from(expenses)
+      .where(eq(expenses.userId, userId))
+      .groupBy(expenses.merchant)
+      .orderBy(desc(sql`COUNT(*)`))
+      .limit(limit);
+
+    return result.map(r => ({
+      merchant: r.merchant,
+      count: Number(r.count),
+      total: Number(r.total),
+    }));
+  }
+
+  async generateDigestContent(userId: string, options?: { includeCategories?: boolean; includeBudgetAlerts?: boolean; includeTopMerchants?: boolean }): Promise<{
+    summary: { totalSpending: number; avgPerDay: number; transactionCount: number; highestExpense: number };
+    trend: { currentMonth: number; previousMonth: number; percentChange: number };
+    categories: { name: string; total: number }[];
+    budgetAlerts: { categoryName: string; spent: number; monthlyLimit: number; percentage: number }[];
+    topMerchants: { merchant: string; count: number; total: number }[];
+    generatedAt: string;
+  }> {
+    const includeCategories = options?.includeCategories !== false;
+    const includeBudgetAlerts = options?.includeBudgetAlerts !== false;
+    const includeTopMerchants = options?.includeTopMerchants !== false;
+
+    const [summary, trend] = await Promise.all([
+      this.getSummaryStats(userId),
+      this.getMonthlyComparison(userId),
+    ]);
+
+    let categoriesData: { name: string; total: number }[] = [];
+    if (includeCategories) {
+      const spending = await this.getCategorySpending(userId);
+      categoriesData = spending.filter(c => c.total > 0).slice(0, 5).map(c => ({ name: c.name, total: Number(c.total) }));
+    }
+
+    let budgetAlerts: { categoryName: string; spent: number; monthlyLimit: number; percentage: number }[] = [];
+    if (includeBudgetAlerts) {
+      const progress = await this.getBudgetProgress(userId);
+      budgetAlerts = progress
+        .map(b => ({ categoryName: b.categoryName, spent: b.spent, monthlyLimit: b.monthlyLimit, percentage: b.monthlyLimit > 0 ? Math.round((b.spent / b.monthlyLimit) * 100) : 0 }))
+        .filter(b => b.percentage >= 80)
+        .sort((a, b) => b.percentage - a.percentage);
+    }
+
+    let topMerchants: { merchant: string; count: number; total: number }[] = [];
+    if (includeTopMerchants) {
+      topMerchants = await this.getTopMerchants(userId, 5);
+    }
+
+    return {
+      summary: {
+        totalSpending: summary.totalSpending,
+        avgPerDay: summary.avgPerDay,
+        transactionCount: summary.transactionCount,
+        highestExpense: summary.highestExpense,
+      },
+      trend: {
+        currentMonth: trend.currentMonth,
+        previousMonth: trend.previousMonth,
+        percentChange: trend.percentChange,
+      },
+      categories: categoriesData,
+      budgetAlerts,
+      topMerchants,
+      generatedAt: new Date().toISOString(),
+    };
   }
 }
 

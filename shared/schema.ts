@@ -142,4 +142,33 @@ export const insertRecurringExpenseSchema = createInsertSchema(recurringExpenses
 export type InsertRecurringExpense = z.infer<typeof insertRecurringExpenseSchema>;
 export type RecurringExpense = typeof recurringExpenses.$inferSelect;
 
+export const digestPreferences = pgTable("digest_preferences", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  enabled: boolean("enabled").default(false).notNull(),
+  frequency: text("frequency").notNull().default("weekly"), // "daily" | "weekly"
+  includeCategories: boolean("include_categories").default(true).notNull(),
+  includeBudgetAlerts: boolean("include_budget_alerts").default(true).notNull(),
+  includeTopMerchants: boolean("include_top_merchants").default(true).notNull(),
+  email: varchar("email"),
+  lastSentAt: timestamp("last_sent_at"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+}, (table) => [unique("digest_preferences_user_unique").on(table.userId)]);
+
+export const insertDigestPreferencesSchema = createInsertSchema(digestPreferences).omit({
+  id: true,
+  createdAt: true,
+  lastSentAt: true,
+}).extend({
+  frequency: z.enum(["daily", "weekly"]).default("weekly"),
+  email: z.string().email("Invalid email address").nullable().optional(),
+  enabled: z.boolean().default(false),
+  includeCategories: z.boolean().default(true),
+  includeBudgetAlerts: z.boolean().default(true),
+  includeTopMerchants: z.boolean().default(true),
+});
+
+export type InsertDigestPreferences = z.infer<typeof insertDigestPreferencesSchema>;
+export type DigestPreferences = typeof digestPreferences.$inferSelect;
+
 export * from "./models/chat";

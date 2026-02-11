@@ -14,7 +14,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
-import { LayoutDashboard, Receipt, BarChart3, Tag, Wallet, LogOut, Sparkles, Target, Repeat } from "lucide-react";
+import { LayoutDashboard, Receipt, BarChart3, Tag, Wallet, LogOut, Sparkles, Target, Repeat, Mail } from "lucide-react";
 
 const menuItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
@@ -23,6 +23,7 @@ const menuItems = [
   { title: "Categories", url: "/categories", icon: Tag },
   { title: "Budgets", url: "/budgets", icon: Target },
   { title: "Recurring", url: "/recurring-expenses", icon: Repeat },
+  { title: "Digest", url: "/digest", icon: Mail },
   { title: "AI Recommendations", url: "/ai-recommendations", icon: Sparkles },
 ];
 
