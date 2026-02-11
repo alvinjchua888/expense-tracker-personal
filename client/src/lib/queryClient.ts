@@ -41,6 +41,16 @@ export const getQueryFn: <T>(options: {
     return await res.json();
   };
 
+export function invalidateExpenseRelatedQueries() {
+  queryClient.invalidateQueries({ queryKey: ["/api/expenses"] });
+  queryClient.invalidateQueries({ queryKey: ["/api/analytics/category-spending"] });
+  queryClient.invalidateQueries({ queryKey: ["/api/analytics/summary-stats"] });
+  queryClient.invalidateQueries({ queryKey: ["/api/analytics/monthly-comparison"] });
+  queryClient.invalidateQueries({ queryKey: ["/api/analytics/weekly-breakdown"] });
+  queryClient.invalidateQueries({ queryKey: ["/api/analytics/period-spending"] });
+  queryClient.invalidateQueries({ queryKey: ["/api/analytics/spending-trend"] });
+}
+
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {

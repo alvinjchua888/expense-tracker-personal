@@ -1,10 +1,11 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertCategorySchema, insertExpenseSchema } from "@shared/schema";
+import { insertCategorySchema, insertExpenseSchema, insertBudgetSchema, insertRecurringExpenseSchema } from "@shared/schema";
 import { z } from "zod";
 import { openai } from "./replit_integrations/image/client";
 import { setupAuth, isAuthenticated } from "./replitAuth";
+import { aiLimiter } from "./rateLimit";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -108,23 +109,66 @@ export async function registerRoutes(
   app.get("/api/expenses", isAuthenticated, async (req: any, res: Response) => {
     try {
       const userId = req.user.claims.sub;
-      const filters: { startDate?: Date; endDate?: Date; categoryId?: number } = {};
-      
-      if (req.query.startDate) {
-        filters.startDate = new Date(req.query.startDate as string);
-      }
-      if (req.query.endDate) {
-        filters.endDate = new Date(req.query.endDate as string);
-      }
-      if (req.query.categoryId) {
-        filters.categoryId = parseInt(req.query.categoryId as string);
-      }
-      
-      const expenses = await storage.getExpenses(userId, Object.keys(filters).length > 0 ? filters : undefined);
-      res.json(expenses);
+      const filters: { startDate?: Date; endDate?: Date; categoryId?: number; limit?: number; offset?: number; search?: string } = {};
+
+      if (req.query.startDate) filters.startDate = new Date(req.query.startDate as string);
+      if (req.query.endDate) filters.endDate = new Date(req.query.endDate as string);
+      if (req.query.categoryId) filters.categoryId = parseInt(req.query.categoryId as string);
+      if (req.query.search) filters.search = (req.query.search as string).trim();
+
+      const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+      const offset = parseInt(req.query.offset as string) || 0;
+      filters.limit = limit;
+      filters.offset = offset;
+
+      const [expensesList, total] = await Promise.all([
+        storage.getExpenses(userId, filters),
+        storage.countExpenses(userId, { startDate: filters.startDate, endDate: filters.endDate, categoryId: filters.categoryId, search: filters.search }),
+      ]);
+
+      res.json({ data: expensesList, total, limit, offset });
     } catch (error) {
       console.error("Error fetching expenses:", error);
       res.status(500).json({ error: "Failed to fetch expenses" });
+    }
+  });
+
+  app.get("/api/expenses/export/csv", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      const filters: { startDate?: Date; endDate?: Date; categoryId?: number } = {};
+      if (req.query.startDate) filters.startDate = new Date(req.query.startDate as string);
+      if (req.query.endDate) filters.endDate = new Date(req.query.endDate as string);
+      if (req.query.categoryId) filters.categoryId = parseInt(req.query.categoryId as string);
+
+      const expensesData = await storage.getExpensesWithCategory(userId, Object.keys(filters).length > 0 ? filters : undefined);
+
+      const escapeCsv = (val: string) => {
+        if (val.includes(",") || val.includes('"') || val.includes("\n")) {
+          return `"${val.replace(/"/g, '""')}"`;
+        }
+        return val;
+      };
+
+      const headers = ["Date", "Merchant", "Category", "Description", "Amount", "Currency"];
+      const rows = expensesData.map(e => [
+        new Date(e.date).toISOString().split("T")[0],
+        escapeCsv(e.merchant),
+        escapeCsv(e.categoryName),
+        escapeCsv(e.description || ""),
+        e.amount.toFixed(2),
+        e.currency,
+      ].join(","));
+
+      const csv = [headers.join(","), ...rows].join("\n");
+      const dateStr = new Date().toISOString().split("T")[0];
+
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", `attachment; filename="expenses-${dateStr}.csv"`);
+      res.send(csv);
+    } catch (error) {
+      console.error("Error exporting expenses:", error);
+      res.status(500).json({ error: "Failed to export expenses" });
     }
   });
 
@@ -307,14 +351,15 @@ export async function registerRoutes(
   app.post("/api/analytics/email-report", isAuthenticated, async (req: any, res: Response) => {
     try {
       const userId = req.user.claims.sub;
-      const { year, email } = req.body;
-      
-      if (!email) {
-        return res.status(400).json({ error: "Email address is required" });
+      const emailReportSchema = z.object({
+        email: z.string().email("Invalid email address"),
+        year: z.number().int().min(2000).max(2100),
+      });
+      const parsed = emailReportSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid request", details: parsed.error.errors });
       }
-      if (!year) {
-        return res.status(400).json({ error: "Year is required" });
-      }
+      const { year, email } = parsed.data;
 
       const user = await storage.getUser(userId);
       const report = await storage.getAnnualReport(userId, year);
@@ -362,7 +407,7 @@ export async function registerRoutes(
     image: z.string(),
   });
 
-  app.post("/api/ai/recommendations", isAuthenticated, async (req: any, res: Response) => {
+  app.post("/api/ai/recommendations", isAuthenticated, aiLimiter, async (req: any, res: Response) => {
     try {
       const userId = req.user.claims.sub;
       const expenses = await storage.getExpenses(userId);
@@ -471,7 +516,7 @@ Only respond with valid JSON, no additional text.`;
     }
   });
 
-  app.post("/api/receipt/scan", isAuthenticated, async (req: Request, res: Response) => {
+  app.post("/api/receipt/scan", isAuthenticated, aiLimiter, async (req: Request, res: Response) => {
     try {
       const parsed = receiptScanSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -568,6 +613,140 @@ Only respond with valid JSON, no additional text.`,
         CNY: 0.127, INR: 1.47, MXN: 0.356,
       };
       res.json({ base: "PHP", rates: fallbackRates, fallback: true });
+    }
+  });
+
+  // Budget endpoints
+  app.get("/api/budgets", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      const budgetsList = await storage.getBudgets(userId);
+      res.json(budgetsList);
+    } catch (error) {
+      console.error("Error fetching budgets:", error);
+      res.status(500).json({ error: "Failed to fetch budgets" });
+    }
+  });
+
+  app.get("/api/budgets/progress", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      const progress = await storage.getBudgetProgress(userId);
+      res.json(progress);
+    } catch (error) {
+      console.error("Error fetching budget progress:", error);
+      res.status(500).json({ error: "Failed to fetch budget progress" });
+    }
+  });
+
+  app.post("/api/budgets", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      const parsed = insertBudgetSchema.safeParse({ ...req.body, userId });
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid budget data", details: parsed.error.errors });
+      }
+      const budget = await storage.createBudget(parsed.data);
+      res.status(201).json(budget);
+    } catch (error: any) {
+      if (error?.code === "23505") {
+        return res.status(400).json({ error: "A budget already exists for this category" });
+      }
+      console.error("Error creating budget:", error);
+      res.status(500).json({ error: "Failed to create budget" });
+    }
+  });
+
+  app.put("/api/budgets/:id", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid budget ID" });
+      const userId = req.user.claims.sub;
+      const budget = await storage.updateBudget(id, userId, req.body);
+      if (!budget) return res.status(404).json({ error: "Budget not found" });
+      res.json(budget);
+    } catch (error) {
+      console.error("Error updating budget:", error);
+      res.status(500).json({ error: "Failed to update budget" });
+    }
+  });
+
+  app.delete("/api/budgets/:id", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid budget ID" });
+      const userId = req.user.claims.sub;
+      await storage.deleteBudget(id, userId);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting budget:", error);
+      res.status(500).json({ error: "Failed to delete budget" });
+    }
+  });
+
+  // Recurring expense endpoints
+  app.get("/api/recurring-expenses", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      const list = await storage.getRecurringExpenses(userId);
+      res.json(list);
+    } catch (error) {
+      console.error("Error fetching recurring expenses:", error);
+      res.status(500).json({ error: "Failed to fetch recurring expenses" });
+    }
+  });
+
+  app.post("/api/recurring-expenses", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      const data = { ...req.body, userId, startDate: new Date(req.body.startDate), endDate: req.body.endDate ? new Date(req.body.endDate) : null };
+      const parsed = insertRecurringExpenseSchema.safeParse(data);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid recurring expense data", details: parsed.error.errors });
+      }
+      const created = await storage.createRecurringExpense(parsed.data);
+      res.status(201).json(created);
+    } catch (error) {
+      console.error("Error creating recurring expense:", error);
+      res.status(500).json({ error: "Failed to create recurring expense" });
+    }
+  });
+
+  app.put("/api/recurring-expenses/:id", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      const userId = req.user.claims.sub;
+      const updated = await storage.updateRecurringExpense(id, userId, req.body);
+      if (!updated) return res.status(404).json({ error: "Not found" });
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating recurring expense:", error);
+      res.status(500).json({ error: "Failed to update recurring expense" });
+    }
+  });
+
+  app.delete("/api/recurring-expenses/:id", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      const userId = req.user.claims.sub;
+      await storage.deleteRecurringExpense(id, userId);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting recurring expense:", error);
+      res.status(500).json({ error: "Failed to delete recurring expense" });
+    }
+  });
+
+  app.post("/api/recurring-expenses/generate", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      const count = await storage.generateDueRecurringExpenses(userId);
+      res.json({ generated: count });
+    } catch (error) {
+      console.error("Error generating recurring expenses:", error);
+      res.status(500).json({ error: "Failed to generate recurring expenses" });
     }
   });
 

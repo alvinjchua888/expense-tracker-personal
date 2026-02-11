@@ -14,6 +14,8 @@ import Expenses from "@/pages/Expenses";
 import Analytics from "@/pages/Analytics";
 import Categories from "@/pages/Categories";
 import AIRecommendations from "@/pages/AIRecommendations";
+import Budgets from "@/pages/Budgets";
+import RecurringExpenses from "@/pages/RecurringExpenses";
 import Landing from "@/pages/Landing";
 import NotFound from "@/pages/not-found";
 
@@ -24,6 +26,8 @@ function AuthenticatedRoutes() {
       <Route path="/expenses" component={Expenses} />
       <Route path="/analytics" component={Analytics} />
       <Route path="/categories" component={Categories} />
+      <Route path="/budgets" component={Budgets} />
+      <Route path="/recurring-expenses" component={RecurringExpenses} />
       <Route path="/ai-recommendations" component={AIRecommendations} />
       <Route component={NotFound} />
     </Switch>

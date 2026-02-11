@@ -1,10 +1,11 @@
+import { useState } from "react";
 import { DollarSign, Calendar, Wallet, TrendingUp } from "lucide-react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { StatCard } from "@/components/StatCard";
 import { ExpenseList } from "@/components/ExpenseList";
 import { ExpenseForm } from "@/components/ExpenseForm";
 import { ReceiptUpload } from "@/components/ReceiptUpload";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, invalidateExpenseRelatedQueries } from "@/lib/queryClient";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCurrency } from "@/hooks/useCurrency";
 import { CURRENCY_SYMBOLS, type Currency, type Expense as DbExpense, type Category } from "@shared/schema";
@@ -20,10 +21,29 @@ interface Expense {
   hasReceipt?: boolean;
 }
 
+interface EditingExpense {
+  id: string;
+  amount: string;
+  currency: string;
+  merchant: string;
+  description: string;
+  category: string;
+  date: Date;
+}
+
 export default function Dashboard() {
-  const { data: dbExpenses = [], isLoading: expensesLoading } = useQuery<DbExpense[]>({
-    queryKey: ["/api/expenses"],
+  const [editingExpense, setEditingExpense] = useState<EditingExpense | null>(null);
+
+  const { data: paginatedData, isLoading: expensesLoading } = useQuery<{ data: DbExpense[]; total: number }>({
+    queryKey: ["/api/expenses", "dashboard"],
+    queryFn: async () => {
+      const response = await fetch("/api/expenses?limit=10", { credentials: "include" });
+      if (!response.ok) throw new Error("Failed to fetch expenses");
+      return response.json();
+    },
   });
+
+  const dbExpenses = paginatedData?.data ?? [];
 
   const { data: categories = [] } = useQuery<Category[]>({
     queryKey: ["/api/categories"],
@@ -34,7 +54,7 @@ export default function Dashboard() {
       return apiRequest("POST", "/api/expenses", data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/expenses"] });
+      invalidateExpenseRelatedQueries();
     },
   });
 
@@ -43,7 +63,7 @@ export default function Dashboard() {
       return apiRequest("DELETE", `/api/expenses/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/expenses"] });
+      invalidateExpenseRelatedQueries();
     },
   });
 
@@ -102,8 +122,44 @@ export default function Dashboard() {
     });
   };
 
+  const updateExpenseMutation = useMutation({
+    mutationFn: async ({ id, ...data }: { id: string; amount: number; currency: string; merchant: string; description?: string; categoryId?: number; date: Date }) => {
+      return apiRequest("PUT", `/api/expenses/${id}`, data);
+    },
+    onSuccess: () => {
+      invalidateExpenseRelatedQueries();
+    },
+  });
+
   const handleDeleteExpense = (id: string) => {
     deleteExpenseMutation.mutate(id);
+  };
+
+  const handleEditExpense = (expense: Expense) => {
+    setEditingExpense({
+      id: expense.id,
+      amount: expense.amount.toString(),
+      currency: expense.currency,
+      merchant: expense.merchant,
+      description: expense.description,
+      category: expense.category,
+      date: expense.date,
+    });
+  };
+
+  const handleUpdateExpense = (data: { amount: string; currency: string; merchant: string; description?: string; category: string; date: Date }) => {
+    if (!editingExpense) return;
+    const categoryId = categories.find(c => c.name.toLowerCase() === data.category.toLowerCase())?.id;
+    updateExpenseMutation.mutate({
+      id: editingExpense.id,
+      amount: parseFloat(data.amount),
+      currency: data.currency,
+      merchant: data.merchant,
+      description: data.description,
+      categoryId,
+      date: data.date,
+    });
+    setEditingExpense(null);
   };
 
   return (
@@ -163,9 +219,24 @@ export default function Dashboard() {
         <ExpenseList
           expenses={expenses}
           onDelete={handleDeleteExpense}
-          onEdit={(e) => console.log("Edit expense:", e)}
+          onEdit={handleEditExpense}
         />
       )}
+
+      <ExpenseForm
+        isEditing
+        open={!!editingExpense}
+        onOpenChange={(open) => { if (!open) setEditingExpense(null); }}
+        defaultValues={editingExpense ? {
+          amount: editingExpense.amount,
+          currency: editingExpense.currency,
+          merchant: editingExpense.merchant,
+          description: editingExpense.description,
+          category: editingExpense.category,
+          date: editingExpense.date,
+        } : undefined}
+        onSubmit={handleUpdateExpense}
+      />
     </div>
   );
 }

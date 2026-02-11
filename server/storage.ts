@@ -1,11 +1,13 @@
-import { 
+import {
   type User, type UpsertUser,
   type Category, type InsertCategory,
   type Expense, type InsertExpense,
-  users, categories, expenses 
+  type Budget, type InsertBudget,
+  type RecurringExpense, type InsertRecurringExpense,
+  users, categories, expenses, budgets, recurringExpenses
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, gte, lte, and, sql } from "drizzle-orm";
+import { eq, desc, gte, lte, and, sql, or, ilike } from "drizzle-orm";
 
 const DEFAULT_CATEGORIES = [
   { name: "Groceries", icon: "ShoppingCart" },
@@ -104,9 +106,9 @@ export class DatabaseStorage implements IStorage {
     await db.delete(categories).where(and(eq(categories.id, id), eq(categories.userId, userId)));
   }
 
-  async getExpenses(userId: string, filters?: { startDate?: Date; endDate?: Date; categoryId?: number }): Promise<Expense[]> {
+  async getExpenses(userId: string, filters?: { startDate?: Date; endDate?: Date; categoryId?: number; limit?: number; offset?: number; search?: string }): Promise<Expense[]> {
     const conditions = [eq(expenses.userId, userId)];
-    
+
     if (filters?.startDate) {
       conditions.push(gte(expenses.date, filters.startDate));
     }
@@ -116,8 +118,50 @@ export class DatabaseStorage implements IStorage {
     if (filters?.categoryId) {
       conditions.push(eq(expenses.categoryId, filters.categoryId));
     }
-    
-    return db.select().from(expenses).where(and(...conditions)).orderBy(desc(expenses.date));
+    if (filters?.search) {
+      const searchPattern = `%${filters.search}%`;
+      conditions.push(
+        or(
+          ilike(expenses.merchant, searchPattern),
+          ilike(expenses.description, searchPattern),
+        )!
+      );
+    }
+
+    let query = db.select().from(expenses).where(and(...conditions)).orderBy(desc(expenses.date));
+
+    if (filters?.limit) {
+      query = query.limit(filters.limit) as typeof query;
+    }
+    if (filters?.offset) {
+      query = query.offset(filters.offset) as typeof query;
+    }
+
+    return query;
+  }
+
+  async countExpenses(userId: string, filters?: { startDate?: Date; endDate?: Date; categoryId?: number; search?: string }): Promise<number> {
+    const conditions = [eq(expenses.userId, userId)];
+
+    if (filters?.startDate) conditions.push(gte(expenses.date, filters.startDate));
+    if (filters?.endDate) conditions.push(lte(expenses.date, filters.endDate));
+    if (filters?.categoryId) conditions.push(eq(expenses.categoryId, filters.categoryId));
+    if (filters?.search) {
+      const searchPattern = `%${filters.search}%`;
+      conditions.push(
+        or(
+          ilike(expenses.merchant, searchPattern),
+          ilike(expenses.description, searchPattern),
+        )!
+      );
+    }
+
+    const [result] = await db
+      .select({ count: sql<number>`COUNT(*)` })
+      .from(expenses)
+      .where(and(...conditions));
+
+    return Number(result.count);
   }
 
   async getExpense(id: number, userId: string): Promise<Expense | undefined> {
@@ -137,6 +181,31 @@ export class DatabaseStorage implements IStorage {
 
   async deleteExpense(id: number, userId: string): Promise<void> {
     await db.delete(expenses).where(and(eq(expenses.id, id), eq(expenses.userId, userId)));
+  }
+
+  async getExpensesWithCategory(userId: string, filters?: { startDate?: Date; endDate?: Date; categoryId?: number }): Promise<{ id: number; amount: number; currency: string; description: string | null; merchant: string; categoryName: string; date: Date; hasReceipt: boolean | null }[]> {
+    const conditions = [eq(expenses.userId, userId)];
+    if (filters?.startDate) conditions.push(gte(expenses.date, filters.startDate));
+    if (filters?.endDate) conditions.push(lte(expenses.date, filters.endDate));
+    if (filters?.categoryId) conditions.push(eq(expenses.categoryId, filters.categoryId));
+
+    const result = await db
+      .select({
+        id: expenses.id,
+        amount: expenses.amount,
+        currency: expenses.currency,
+        description: expenses.description,
+        merchant: expenses.merchant,
+        categoryName: sql<string>`COALESCE(${categories.name}, 'Uncategorized')`,
+        date: expenses.date,
+        hasReceipt: expenses.hasReceipt,
+      })
+      .from(expenses)
+      .leftJoin(categories, eq(expenses.categoryId, categories.id))
+      .where(and(...conditions))
+      .orderBy(desc(expenses.date));
+
+    return result;
   }
 
   async getCategorySpending(userId: string): Promise<{ categoryId: number; name: string; total: number }[]> {
@@ -359,6 +428,139 @@ export class DatabaseStorage implements IStorage {
       grandTotal,
       transactionCount: expenseList.length,
     };
+  }
+
+  // Budget methods
+  async getBudgets(userId: string): Promise<Budget[]> {
+    return db.select().from(budgets).where(eq(budgets.userId, userId));
+  }
+
+  async createBudget(budget: InsertBudget): Promise<Budget> {
+    const [created] = await db.insert(budgets).values(budget).returning();
+    return created;
+  }
+
+  async updateBudget(id: number, userId: string, data: Partial<InsertBudget>): Promise<Budget | undefined> {
+    const [updated] = await db.update(budgets).set(data).where(and(eq(budgets.id, id), eq(budgets.userId, userId))).returning();
+    return updated || undefined;
+  }
+
+  async deleteBudget(id: number, userId: string): Promise<void> {
+    await db.delete(budgets).where(and(eq(budgets.id, id), eq(budgets.userId, userId)));
+  }
+
+  async getBudgetProgress(userId: string): Promise<{ budgetId: number; categoryId: number; categoryName: string; monthlyLimit: number; spent: number }[]> {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1;
+
+    const result = await db
+      .select({
+        budgetId: budgets.id,
+        categoryId: budgets.categoryId,
+        categoryName: categories.name,
+        monthlyLimit: budgets.monthlyLimit,
+        spent: sql<number>`COALESCE((
+          SELECT SUM(${expenses.amount})
+          FROM ${expenses}
+          WHERE ${expenses.userId} = ${userId}
+            AND ${expenses.categoryId} = ${budgets.categoryId}
+            AND EXTRACT(YEAR FROM ${expenses.date}) = ${currentYear}
+            AND EXTRACT(MONTH FROM ${expenses.date}) = ${currentMonth}
+        ), 0)`,
+      })
+      .from(budgets)
+      .leftJoin(categories, eq(budgets.categoryId, categories.id))
+      .where(eq(budgets.userId, userId));
+
+    return result.map(r => ({
+      budgetId: r.budgetId,
+      categoryId: r.categoryId,
+      categoryName: r.categoryName || "Unknown",
+      monthlyLimit: Number(r.monthlyLimit),
+      spent: Number(r.spent),
+    }));
+  }
+
+  // Recurring expense methods
+  async getRecurringExpenses(userId: string): Promise<RecurringExpense[]> {
+    return db.select().from(recurringExpenses).where(eq(recurringExpenses.userId, userId)).orderBy(desc(recurringExpenses.createdAt));
+  }
+
+  async createRecurringExpense(data: InsertRecurringExpense): Promise<RecurringExpense> {
+    const [created] = await db.insert(recurringExpenses).values(data).returning();
+    return created;
+  }
+
+  async updateRecurringExpense(id: number, userId: string, data: Partial<InsertRecurringExpense>): Promise<RecurringExpense | undefined> {
+    const [updated] = await db.update(recurringExpenses).set(data).where(and(eq(recurringExpenses.id, id), eq(recurringExpenses.userId, userId))).returning();
+    return updated || undefined;
+  }
+
+  async deleteRecurringExpense(id: number, userId: string): Promise<void> {
+    await db.delete(recurringExpenses).where(and(eq(recurringExpenses.id, id), eq(recurringExpenses.userId, userId)));
+  }
+
+  async generateDueRecurringExpenses(userId: string): Promise<number> {
+    const active = await db.select().from(recurringExpenses)
+      .where(and(eq(recurringExpenses.userId, userId), eq(recurringExpenses.isActive, true)));
+
+    let generated = 0;
+    const now = new Date();
+
+    for (const rec of active) {
+      if (rec.endDate && rec.endDate < now) continue;
+
+      let lastDate = rec.lastGeneratedDate || new Date(rec.startDate.getTime() - 1);
+      const toGenerate: Date[] = [];
+
+      let nextDate = this.getNextOccurrence(rec.startDate, rec.frequency, lastDate);
+      while (nextDate <= now && toGenerate.length < 100) {
+        toGenerate.push(nextDate);
+        nextDate = this.getNextOccurrence(rec.startDate, rec.frequency, nextDate);
+      }
+
+      for (const date of toGenerate) {
+        await db.insert(expenses).values({
+          userId: rec.userId,
+          amount: rec.amount,
+          currency: rec.currency,
+          merchant: rec.merchant,
+          description: rec.description ? `${rec.description} (recurring)` : "Recurring expense",
+          categoryId: rec.categoryId,
+          date,
+          hasReceipt: false,
+        });
+        generated++;
+      }
+
+      if (toGenerate.length > 0) {
+        await db.update(recurringExpenses)
+          .set({ lastGeneratedDate: toGenerate[toGenerate.length - 1] })
+          .where(eq(recurringExpenses.id, rec.id));
+      }
+    }
+
+    return generated;
+  }
+
+  private getNextOccurrence(startDate: Date, frequency: string, afterDate: Date): Date {
+    const next = new Date(afterDate);
+    switch (frequency) {
+      case "daily":
+        next.setDate(next.getDate() + 1);
+        break;
+      case "weekly":
+        next.setDate(next.getDate() + 7);
+        break;
+      case "monthly":
+        next.setMonth(next.getMonth() + 1);
+        break;
+      case "yearly":
+        next.setFullYear(next.getFullYear() + 1);
+        break;
+    }
+    return next;
   }
 }
 

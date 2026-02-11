@@ -33,6 +33,7 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import { useEffect } from "react";
 import { CalendarIcon, Plus } from "lucide-react";
 import { format } from "date-fns";
 import { defaultCategories } from "./CategoryBadge";
@@ -56,10 +57,16 @@ interface ExpenseFormProps {
   onSubmit?: (data: ExpenseFormValues) => void;
   trigger?: React.ReactNode;
   defaultValues?: Partial<ExpenseFormValues>;
+  isEditing?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
-export function ExpenseForm({ onSubmit, trigger, defaultValues }: ExpenseFormProps) {
-  const [open, setOpen] = useState(false);
+export function ExpenseForm({ onSubmit, trigger, defaultValues, isEditing, open: controlledOpen, onOpenChange }: ExpenseFormProps) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : internalOpen;
+  const setOpen = isControlled ? (onOpenChange || (() => {})) : setInternalOpen;
 
   const form = useForm<ExpenseFormValues>({
     resolver: zodResolver(expenseSchema),
@@ -73,8 +80,20 @@ export function ExpenseForm({ onSubmit, trigger, defaultValues }: ExpenseFormPro
     },
   });
 
+  useEffect(() => {
+    if (open && defaultValues) {
+      form.reset({
+        amount: defaultValues.amount || "",
+        currency: defaultValues.currency || "PHP",
+        merchant: defaultValues.merchant || "",
+        description: defaultValues.description || "",
+        category: defaultValues.category || "",
+        date: defaultValues.date || new Date(),
+      });
+    }
+  }, [open, defaultValues]);
+
   const handleSubmit = (data: ExpenseFormValues) => {
-    console.log("Form submitted:", data);
     onSubmit?.(data);
     form.reset({
       amount: "",
@@ -89,17 +108,19 @@ export function ExpenseForm({ onSubmit, trigger, defaultValues }: ExpenseFormPro
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        {trigger || (
-          <Button data-testid="button-add-expense">
-            <Plus className="h-4 w-4 mr-2" />
-            Add Expense
-          </Button>
-        )}
-      </DialogTrigger>
+      {!isControlled && (
+        <DialogTrigger asChild>
+          {trigger || (
+            <Button data-testid="button-add-expense">
+              <Plus className="h-4 w-4 mr-2" />
+              Add Expense
+            </Button>
+          )}
+        </DialogTrigger>
+      )}
       <DialogContent className="sm:max-w-lg" data-testid="dialog-expense-form">
         <DialogHeader>
-          <DialogTitle>Add New Expense</DialogTitle>
+          <DialogTitle>{isEditing ? "Edit Expense" : "Add New Expense"}</DialogTitle>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
@@ -247,7 +268,7 @@ export function ExpenseForm({ onSubmit, trigger, defaultValues }: ExpenseFormPro
                 Cancel
               </Button>
               <Button type="submit" data-testid="button-save-expense">
-                Save Expense
+                {isEditing ? "Update Expense" : "Save Expense"}
               </Button>
             </div>
           </form>

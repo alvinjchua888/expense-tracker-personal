@@ -9,6 +9,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import {
   Plus,
@@ -61,6 +71,7 @@ export function CategoryManagement({
 }: CategoryManagementProps) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+  const [deletingCategory, setDeletingCategory] = useState<Category | null>(null);
   const [newName, setNewName] = useState("");
   const [selectedIcon, setSelectedIcon] = useState("Shopping");
 
@@ -170,10 +181,7 @@ export function CategoryManagement({
                   variant="ghost"
                   size="icon"
                   className="h-7 w-7 text-destructive"
-                  onClick={() => {
-                    onDelete?.(category.id);
-                    console.log("Delete category:", category.id);
-                  }}
+                  onClick={() => setDeletingCategory(category)}
                   data-testid={`button-delete-category-${category.id}`}
                 >
                   <Trash2 className="h-3 w-3" />
@@ -233,6 +241,31 @@ export function CategoryManagement({
           </div>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!deletingCategory} onOpenChange={(open) => !open && setDeletingCategory(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Category</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{deletingCategory?.name}"? Expenses in this category will become uncategorized. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (deletingCategory) {
+                  onDelete?.(deletingCategory.id);
+                  setDeletingCategory(null);
+                }
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }

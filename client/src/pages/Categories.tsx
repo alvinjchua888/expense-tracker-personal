@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { CategoryManagement } from "@/components/CategoryManagement";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, invalidateExpenseRelatedQueries } from "@/lib/queryClient";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Category } from "@shared/schema";
 
@@ -26,6 +26,7 @@ export default function Categories() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/categories"] });
+      invalidateExpenseRelatedQueries();
     },
   });
 
@@ -35,6 +36,7 @@ export default function Categories() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/categories"] });
+      invalidateExpenseRelatedQueries();
     },
   });
 
@@ -44,6 +46,7 @@ export default function Categories() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/categories"] });
+      invalidateExpenseRelatedQueries();
     },
   });
 
