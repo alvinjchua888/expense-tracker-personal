@@ -20,6 +20,9 @@ export const sessions = pgTable(
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   email: varchar("email").unique(),
+  username: varchar("username").unique(),
+  passwordHash: varchar("password_hash"),
+  authMethod: varchar("auth_method").default("oidc").notNull(),
   firstName: varchar("first_name"),
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
@@ -29,6 +32,19 @@ export const users = pgTable("users", {
 
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
+
+export const registerUserSchema = z.object({
+  username: z.string().min(3, "Username must be at least 3 characters").max(50).transform(s => s.trim().toLowerCase()),
+  password: z.string().min(6, "Password must be at least 6 characters").max(100),
+  email: z.string().email("Invalid email").optional().or(z.literal("")),
+  firstName: z.string().max(100).transform(s => s.trim()).optional().or(z.literal("")),
+  lastName: z.string().max(100).transform(s => s.trim()).optional().or(z.literal("")),
+});
+
+export const loginUserSchema = z.object({
+  username: z.string().min(1, "Username is required"),
+  password: z.string().min(1, "Password is required"),
+});
 
 export const categories = pgTable("categories", {
   id: serial("id").primaryKey(),

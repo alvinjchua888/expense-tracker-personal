@@ -9,6 +9,8 @@ import {
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, gte, lte, and, sql, or, ilike } from "drizzle-orm";
+import bcrypt from "bcryptjs";
+import { randomUUID } from "crypto";
 
 const DEFAULT_CATEGORIES = [
   { name: "Groceries", icon: "ShoppingCart" },
@@ -600,6 +602,27 @@ export class DatabaseStorage implements IStorage {
       count: Number(r.count),
       total: Number(r.total),
     }));
+  }
+
+  // Local auth methods
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user || undefined;
+  }
+
+  async createLocalUser(data: { username: string; password: string; email?: string; firstName?: string; lastName?: string }): Promise<User> {
+    const passwordHash = await bcrypt.hash(data.password, 10);
+    const id = randomUUID();
+    const [user] = await db.insert(users).values({
+      id,
+      username: data.username,
+      passwordHash,
+      authMethod: "local",
+      email: data.email || null,
+      firstName: data.firstName || null,
+      lastName: data.lastName || null,
+    }).returning();
+    return user;
   }
 
   async generateDigestContent(userId: string, options?: { includeCategories?: boolean; includeBudgetAlerts?: boolean; includeTopMerchants?: boolean }): Promise<{
