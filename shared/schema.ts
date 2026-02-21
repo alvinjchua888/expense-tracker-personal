@@ -187,4 +187,76 @@ export const insertDigestPreferencesSchema = createInsertSchema(digestPreference
 export type InsertDigestPreferences = z.infer<typeof insertDigestPreferencesSchema>;
 export type DigestPreferences = typeof digestPreferences.$inferSelect;
 
+// Savings Goals table for tracking financial objectives
+export const savingsGoals = pgTable("savings_goals", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  name: varchar("name", { length: 100 }).notNull(),
+  targetAmount: real("target_amount").notNull(),
+  currentAmount: real("current_amount").default(0).notNull(),
+  targetDate: timestamp("target_date").notNull(),
+  icon: varchar("icon", { length: 50 }).default("🎯"),
+  color: varchar("color", { length: 7 }).default("#3B82F6"),
+  linkedCategoryId: integer("linked_category_id").references(() => categories.id),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const insertSavingsGoalSchema = createInsertSchema(savingsGoals).omit({
+  id: true,
+  createdAt: true,
+  currentAmount: true,
+}).extend({
+  targetAmount: z.number().positive("Target must be positive").finite().max(999999999, "Amount too large"),
+  name: z.string().min(1, "Name is required").max(100, "Name must be 100 characters or less").transform(s => s.trim()),
+  icon: z.string().max(50).default("🎯").optional(),
+  color: z.string().max(7).default("#3B82F6").optional(),
+  linkedCategoryId: z.number().int().positive().nullable().optional(),
+});
+
+export type InsertSavingsGoal = z.infer<typeof insertSavingsGoalSchema>;
+export type SavingsGoal = typeof savingsGoals.$inferSelect;
+
+// Goal Contributions table (Story 2-2)
+export const goalContributions = pgTable("goal_contributions", {
+  id: serial("id").primaryKey(),
+  goalId: integer("goal_id").references(() => savingsGoals.id, { onDelete: "cascade" }).notNull(),
+  amount: real("amount").notNull(),
+  note: text("note"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const insertGoalContributionSchema = createInsertSchema(goalContributions).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  amount: z.number().positive("Amount must be positive").finite().max(999999999),
+  note: z.string().max(500).nullable().optional(),
+});
+
+export type InsertGoalContribution = z.infer<typeof insertGoalContributionSchema>;
+export type GoalContribution = typeof goalContributions.$inferSelect;
+
+// User Streaks table (Story 5-1)
+export const userStreaks = pgTable("user_streaks", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  currentStreak: integer("current_streak").default(0).notNull(),
+  longestStreak: integer("longest_streak").default(0).notNull(),
+  lastExpenseDate: timestamp("last_expense_date"),
+  streakFreezesUsed: integer("streak_freezes_used").default(0).notNull(),
+  updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+}, (table) => [unique("user_streaks_user_unique").on(table.userId)]);
+
+export type UserStreak = typeof userStreaks.$inferSelect;
+
+// User Badges table (Story 5-2)
+export const userBadges = pgTable("user_badges", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  badgeKey: varchar("badge_key", { length: 50 }).notNull(),
+  unlockedAt: timestamp("unlocked_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+}, (table) => [unique("user_badge_unique").on(table.userId, table.badgeKey)]);
+
+export type UserBadge = typeof userBadges.$inferSelect;
+
 export * from "./models/chat";

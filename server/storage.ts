@@ -5,7 +5,12 @@ import {
   type Budget, type InsertBudget,
   type RecurringExpense, type InsertRecurringExpense,
   type DigestPreferences, type InsertDigestPreferences,
-  users, categories, expenses, budgets, recurringExpenses, digestPreferences
+  type SavingsGoal, type InsertSavingsGoal,
+  type GoalContribution, type InsertGoalContribution,
+  type UserStreak,
+  type UserBadge,
+  users, categories, expenses, budgets, recurringExpenses, digestPreferences, savingsGoals,
+  goalContributions, userStreaks, userBadges
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, gte, lte, and, sql, or, ilike } from "drizzle-orm";
@@ -51,6 +56,27 @@ export interface IStorage {
   getSpendingByMonth(userId: string, year: number): Promise<{ period: string; total: number; count: number }[]>;
   getSpendingByDay(userId: string, year: number, month: number): Promise<{ period: string; total: number; count: number }[]>;
   getAnnualReport(userId: string, year: number): Promise<{ expenses: any[]; categoryTotals: { name: string; total: number }[]; grandTotal: number; transactionCount: number }>;
+  
+  // Savings Goals
+  getSavingsGoals(userId: string): Promise<SavingsGoal[]>;
+  getSavingsGoal(id: number, userId: string): Promise<SavingsGoal | undefined>;
+  createSavingsGoal(goal: InsertSavingsGoal): Promise<SavingsGoal>;
+  updateSavingsGoal(id: number, userId: string, data: Partial<InsertSavingsGoal>): Promise<SavingsGoal | undefined>;
+  deleteSavingsGoal(id: number, userId: string): Promise<void>;
+  countSavingsGoals(userId: string): Promise<number>;
+
+  // Goal Contributions (Story 2-2)
+  getGoalContributions(goalId: number, userId: string): Promise<GoalContribution[]>;
+  createGoalContribution(data: InsertGoalContribution, userId: string): Promise<GoalContribution>;
+  deleteGoalContribution(id: number, goalId: number, userId: string): Promise<void>;
+
+  // Streaks (Story 5-1)
+  getUserStreak(userId: string): Promise<UserStreak | undefined>;
+  updateUserStreak(userId: string): Promise<UserStreak>;
+
+  // Badges (Story 5-2)
+  getUserBadges(userId: string): Promise<UserBadge[]>;
+  checkAndUnlockBadges(userId: string): Promise<string[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -679,6 +705,183 @@ export class DatabaseStorage implements IStorage {
       topMerchants,
       generatedAt: new Date().toISOString(),
     };
+  }
+
+  // Savings Goals methods
+  async getSavingsGoals(userId: string): Promise<SavingsGoal[]> {
+    return db.select().from(savingsGoals).where(eq(savingsGoals.userId, userId)).orderBy(desc(savingsGoals.createdAt));
+  }
+
+  async getSavingsGoal(id: number, userId: string): Promise<SavingsGoal | undefined> {
+    const [goal] = await db.select().from(savingsGoals).where(and(eq(savingsGoals.id, id), eq(savingsGoals.userId, userId)));
+    return goal || undefined;
+  }
+
+  async createSavingsGoal(goal: InsertSavingsGoal): Promise<SavingsGoal> {
+    const [created] = await db.insert(savingsGoals).values(goal).returning();
+    return created;
+  }
+
+  async updateSavingsGoal(id: number, userId: string, data: Partial<InsertSavingsGoal>): Promise<SavingsGoal | undefined> {
+    const [updated] = await db.update(savingsGoals).set(data).where(and(eq(savingsGoals.id, id), eq(savingsGoals.userId, userId))).returning();
+    return updated || undefined;
+  }
+
+  async deleteSavingsGoal(id: number, userId: string): Promise<void> {
+    await db.delete(savingsGoals).where(and(eq(savingsGoals.id, id), eq(savingsGoals.userId, userId)));
+  }
+
+  async countSavingsGoals(userId: string): Promise<number> {
+    const [result] = await db.select({ count: sql<number>`COUNT(*)` }).from(savingsGoals).where(eq(savingsGoals.userId, userId));
+    return Number(result.count);
+  }
+
+  // Goal Contributions (Story 2-2)
+  async getGoalContributions(goalId: number, userId: string): Promise<GoalContribution[]> {
+    // Verify ownership first
+    const goal = await this.getSavingsGoal(goalId, userId);
+    if (!goal) return [];
+    return db.select().from(goalContributions)
+      .where(eq(goalContributions.goalId, goalId))
+      .orderBy(desc(goalContributions.createdAt));
+  }
+
+  async createGoalContribution(data: InsertGoalContribution, userId: string): Promise<GoalContribution> {
+    const goal = await this.getSavingsGoal(data.goalId, userId);
+    if (!goal) throw new Error("Goal not found");
+    const [contribution] = await db.insert(goalContributions).values(data).returning();
+    // Update currentAmount on the goal
+    await db.update(savingsGoals)
+      .set({ currentAmount: sql`${savingsGoals.currentAmount} + ${data.amount}` })
+      .where(eq(savingsGoals.id, data.goalId));
+    return contribution;
+  }
+
+  async deleteGoalContribution(id: number, goalId: number, userId: string): Promise<void> {
+    const goal = await this.getSavingsGoal(goalId, userId);
+    if (!goal) throw new Error("Goal not found");
+    const [contrib] = await db.select().from(goalContributions)
+      .where(and(eq(goalContributions.id, id), eq(goalContributions.goalId, goalId)));
+    if (!contrib) return;
+    await db.delete(goalContributions).where(eq(goalContributions.id, id));
+    // Subtract amount from currentAmount (floor at 0)
+    await db.update(savingsGoals)
+      .set({ currentAmount: sql`GREATEST(0, ${savingsGoals.currentAmount} - ${contrib.amount})` })
+      .where(eq(savingsGoals.id, goalId));
+  }
+
+  // Streak methods (Story 5-1)
+  async getUserStreak(userId: string): Promise<UserStreak | undefined> {
+    const [streak] = await db.select().from(userStreaks).where(eq(userStreaks.userId, userId));
+    return streak || undefined;
+  }
+
+  async updateUserStreak(userId: string): Promise<UserStreak> {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    const existing = await this.getUserStreak(userId);
+
+    if (!existing) {
+      const [created] = await db.insert(userStreaks).values({
+        userId,
+        currentStreak: 1,
+        longestStreak: 1,
+        lastExpenseDate: today,
+        streakFreezesUsed: 0,
+      }).returning();
+      return created;
+    }
+
+    const lastDate = existing.lastExpenseDate ? new Date(existing.lastExpenseDate) : null;
+    if (lastDate) lastDate.setHours(0, 0, 0, 0);
+
+    // Already logged today
+    if (lastDate && lastDate.getTime() === today.getTime()) {
+      return existing;
+    }
+
+    let newStreak = existing.currentStreak;
+    // Consecutive day (yesterday)
+    if (lastDate && lastDate.getTime() === yesterday.getTime()) {
+      newStreak = existing.currentStreak + 1;
+    } else if (!lastDate) {
+      newStreak = 1;
+    } else {
+      // Streak broken — check if freeze available
+      const dayGap = Math.floor((today.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
+      if (dayGap === 2 && existing.streakFreezesUsed < 1) {
+        // Use a freeze
+        newStreak = existing.currentStreak + 1;
+        await db.update(userStreaks).set({
+          streakFreezesUsed: existing.streakFreezesUsed + 1,
+          currentStreak: newStreak,
+          longestStreak: Math.max(newStreak, existing.longestStreak),
+          lastExpenseDate: today,
+          updatedAt: new Date(),
+        }).where(eq(userStreaks.userId, userId));
+        const [updated] = await db.select().from(userStreaks).where(eq(userStreaks.userId, userId));
+        return updated;
+      }
+      newStreak = 1;
+    }
+
+    const [updated] = await db.update(userStreaks).set({
+      currentStreak: newStreak,
+      longestStreak: Math.max(newStreak, existing.longestStreak),
+      lastExpenseDate: today,
+      updatedAt: new Date(),
+    }).where(eq(userStreaks.userId, userId)).returning();
+    return updated;
+  }
+
+  // Badge methods (Story 5-2)
+  async getUserBadges(userId: string): Promise<UserBadge[]> {
+    return db.select().from(userBadges).where(eq(userBadges.userId, userId)).orderBy(desc(userBadges.unlockedAt));
+  }
+
+  async checkAndUnlockBadges(userId: string): Promise<string[]> {
+    const existing = await this.getUserBadges(userId);
+    const existingKeys = new Set(existing.map(b => b.badgeKey));
+    const newBadges: string[] = [];
+
+    const [expenseCount] = await db.select({ count: sql<number>`COUNT(*)` }).from(expenses).where(eq(expenses.userId, userId));
+    const totalExpenses = Number(expenseCount.count);
+
+    const [receiptCount] = await db.select({ count: sql<number>`COUNT(*)` }).from(expenses)
+      .where(and(eq(expenses.userId, userId), eq(expenses.hasReceipt, true)));
+    const totalReceipts = Number(receiptCount.count);
+
+    const goalCount = await this.countSavingsGoals(userId);
+    const streak = await this.getUserStreak(userId);
+    const budgetsData = await this.getBudgets(userId);
+
+    const badgeChecks: { key: string; condition: boolean }[] = [
+      { key: "first_expense", condition: totalExpenses >= 1 },
+      { key: "ten_expenses", condition: totalExpenses >= 10 },
+      { key: "fifty_expenses", condition: totalExpenses >= 50 },
+      { key: "receipt_rookie", condition: totalReceipts >= 1 },
+      { key: "scanner_pro", condition: totalReceipts >= 50 },
+      { key: "week_warrior", condition: (streak?.currentStreak || 0) >= 7 },
+      { key: "month_master", condition: (streak?.currentStreak || 0) >= 30 },
+      { key: "streak_100", condition: (streak?.longestStreak || 0) >= 100 },
+      { key: "streak_365", condition: (streak?.longestStreak || 0) >= 365 },
+      { key: "goal_setter", condition: goalCount >= 1 },
+      { key: "budget_boss", condition: budgetsData.length >= 1 },
+    ];
+
+    for (const { key, condition } of badgeChecks) {
+      if (condition && !existingKeys.has(key)) {
+        try {
+          await db.insert(userBadges).values({ userId, badgeKey: key }).onConflictDoNothing();
+          newBadges.push(key);
+        } catch {}
+      }
+    }
+
+    return newBadges;
   }
 }
 

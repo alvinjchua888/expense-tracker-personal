@@ -5,6 +5,7 @@ import { StatCard } from "@/components/StatCard";
 import { ExpenseList } from "@/components/ExpenseList";
 import { ExpenseForm } from "@/components/ExpenseForm";
 import { ReceiptUpload } from "@/components/ReceiptUpload";
+import { StreakWidget } from "@/components/StreakWidget";
 import { apiRequest, queryClient, invalidateExpenseRelatedQueries } from "@/lib/queryClient";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCurrency } from "@/hooks/useCurrency";
@@ -208,6 +209,8 @@ export default function Dashboard() {
           </>
         )}
       </div>
+
+      <StreakWidget className="md:max-w-sm" />
 
       {expensesLoading ? (
         <div className="space-y-2">

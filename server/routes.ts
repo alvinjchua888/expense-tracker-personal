@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertCategorySchema, insertExpenseSchema, insertBudgetSchema, insertRecurringExpenseSchema, insertDigestPreferencesSchema } from "@shared/schema";
+import { insertCategorySchema, insertExpenseSchema, insertBudgetSchema, insertRecurringExpenseSchema, insertDigestPreferencesSchema, insertSavingsGoalSchema, insertGoalContributionSchema } from "@shared/schema";
 import { z } from "zod";
 import { openai } from "./replit_integrations/image/client";
 import { setupAuth, isAuthenticated } from "./replitAuth";
@@ -203,6 +203,9 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Invalid expense data", details: parsed.error.errors });
       }
       const expense = await storage.createExpense(parsed.data);
+      // Update streak and check badges (fire-and-forget, don't block response)
+      storage.updateUserStreak(userId).catch(() => {});
+      storage.checkAndUnlockBadges(userId).catch(() => {});
       res.status(201).json(expense);
     } catch (error) {
       console.error("Error creating expense:", error);
@@ -889,6 +892,275 @@ Only respond with valid JSON, no additional text.`,
     } catch (error) {
       console.error("Error sending digest:", error);
       res.status(500).json({ error: "Failed to send digest" });
+    }
+  });
+
+  // Savings Goals endpoints
+  app.get("/api/goals", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      const goals = await storage.getSavingsGoals(userId);
+      res.json(goals);
+    } catch (error) {
+      console.error("Error fetching goals:", error);
+      res.status(500).json({ error: "Failed to fetch goals" });
+    }
+  });
+
+  app.get("/api/goals/:id", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid goal ID" });
+      const userId = req.user.claims.sub;
+      const goal = await storage.getSavingsGoal(id, userId);
+      if (!goal) return res.status(404).json({ error: "Goal not found" });
+      res.json(goal);
+    } catch (error) {
+      console.error("Error fetching goal:", error);
+      res.status(500).json({ error: "Failed to fetch goal" });
+    }
+  });
+
+  app.post("/api/goals", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      
+      // Check 10-goal limit
+      const count = await storage.countSavingsGoals(userId);
+      if (count >= 10) {
+        return res.status(400).json({ error: "Maximum 10 goals reached" });
+      }
+      
+      const data = {
+        ...req.body,
+        targetDate: new Date(req.body.targetDate),
+        userId,
+      };
+      const parsed = insertSavingsGoalSchema.safeParse(data);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid goal data", details: parsed.error.errors });
+      }
+      const goal = await storage.createSavingsGoal(parsed.data);
+      res.status(201).json(goal);
+    } catch (error) {
+      console.error("Error creating goal:", error);
+      res.status(500).json({ error: "Failed to create goal" });
+    }
+  });
+
+  app.put("/api/goals/:id", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid goal ID" });
+      const userId = req.user.claims.sub;
+      const data = {
+        ...req.body,
+        ...(req.body.targetDate && { targetDate: new Date(req.body.targetDate) }),
+      };
+      const goal = await storage.updateSavingsGoal(id, userId, data);
+      if (!goal) return res.status(404).json({ error: "Goal not found" });
+      res.json(goal);
+    } catch (error) {
+      console.error("Error updating goal:", error);
+      res.status(500).json({ error: "Failed to update goal" });
+    }
+  });
+
+  app.delete("/api/goals/:id", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid goal ID" });
+      const userId = req.user.claims.sub;
+      await storage.deleteSavingsGoal(id, userId);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting goal:", error);
+      res.status(500).json({ error: "Failed to delete goal" });
+    }
+  });
+
+  // Goal Contributions (Story 2-2)
+  app.get("/api/goals/:id/contributions", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const goalId = parseInt(req.params.id);
+      if (isNaN(goalId)) return res.status(400).json({ error: "Invalid goal ID" });
+      const userId = req.user.claims.sub;
+      const contributions = await storage.getGoalContributions(goalId, userId);
+      res.json(contributions);
+    } catch (error) {
+      console.error("Error fetching contributions:", error);
+      res.status(500).json({ error: "Failed to fetch contributions" });
+    }
+  });
+
+  app.post("/api/goals/:id/contributions", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const goalId = parseInt(req.params.id);
+      if (isNaN(goalId)) return res.status(400).json({ error: "Invalid goal ID" });
+      const userId = req.user.claims.sub;
+      const parsed = insertGoalContributionSchema.safeParse({ ...req.body, goalId });
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid contribution data", details: parsed.error.errors });
+      }
+      const contribution = await storage.createGoalContribution(parsed.data, userId);
+      // Check badges after contribution
+      await storage.checkAndUnlockBadges(userId);
+      res.status(201).json(contribution);
+    } catch (error: any) {
+      if (error?.message === "Goal not found") return res.status(404).json({ error: "Goal not found" });
+      console.error("Error creating contribution:", error);
+      res.status(500).json({ error: "Failed to create contribution" });
+    }
+  });
+
+  app.delete("/api/goals/:id/contributions/:contribId", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const goalId = parseInt(req.params.id);
+      const contribId = parseInt(req.params.contribId);
+      if (isNaN(goalId) || isNaN(contribId)) return res.status(400).json({ error: "Invalid ID" });
+      const userId = req.user.claims.sub;
+      await storage.deleteGoalContribution(contribId, goalId, userId);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting contribution:", error);
+      res.status(500).json({ error: "Failed to delete contribution" });
+    }
+  });
+
+  // Streak endpoints (Story 5-1)
+  app.get("/api/streak", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      const streak = await storage.getUserStreak(userId);
+      res.json(streak || { currentStreak: 0, longestStreak: 0, lastExpenseDate: null, streakFreezesUsed: 0 });
+    } catch (error) {
+      console.error("Error fetching streak:", error);
+      res.status(500).json({ error: "Failed to fetch streak" });
+    }
+  });
+
+  // Badge endpoints (Story 5-2)
+  app.get("/api/badges", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      const badges = await storage.getUserBadges(userId);
+      res.json(badges);
+    } catch (error) {
+      console.error("Error fetching badges:", error);
+      res.status(500).json({ error: "Failed to fetch badges" });
+    }
+  });
+
+  // Natural Language Expense Parsing (Story 1-1)
+  app.post("/api/expenses/parse-natural", isAuthenticated, aiLimiter, async (req: any, res: Response) => {
+    try {
+      const { text } = req.body;
+      if (!text || typeof text !== "string" || text.trim().length === 0) {
+        return res.status(400).json({ error: "Text is required" });
+      }
+      const userId = req.user.claims.sub;
+      const categories = await storage.getCategories(userId);
+      const categoryList = categories.map(c => `${c.id}:${c.name}`).join(", ");
+
+      const prompt = `Parse the following expense description and extract structured data.
+Today's date is ${new Date().toISOString().split("T")[0]}.
+Available categories: ${categoryList}
+
+Text: "${text.trim()}"
+
+Respond ONLY with a JSON object (no markdown) with these fields:
+- amount: number (required, the expense amount)
+- merchant: string (required, who/where the expense was at)
+- description: string or null (optional details)
+- categoryId: number or null (best matching category ID from the list, or null)
+- date: string (ISO date YYYY-MM-DD, default to today if not mentioned)
+- currency: string (3-letter code, default "PHP")
+- confidence: number (0-100, how confident you are in the parse)
+
+If you cannot find an amount, set confidence to 0 and amount to 0.`;
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: 300,
+        temperature: 0,
+      });
+
+      const content = response.choices[0]?.message?.content || "{}";
+      let parsed: any = {};
+      try {
+        parsed = JSON.parse(content.replace(/```json\n?|\n?```/g, "").trim());
+      } catch {
+        return res.status(422).json({ error: "Could not parse the text. Please try being more specific." });
+      }
+
+      if (!parsed.amount || parsed.confidence < 40) {
+        return res.status(422).json({ error: "Could not extract expense details. Try: 'Spent $45 at Starbucks on coffee'" });
+      }
+
+      res.json({
+        amount: Number(parsed.amount),
+        merchant: String(parsed.merchant || "Unknown"),
+        description: parsed.description || null,
+        categoryId: parsed.categoryId ? Number(parsed.categoryId) : null,
+        date: parsed.date || new Date().toISOString().split("T")[0],
+        currency: parsed.currency || "PHP",
+        confidence: Number(parsed.confidence),
+      });
+    } catch (error) {
+      console.error("Error parsing natural language:", error);
+      res.status(500).json({ error: "Failed to parse expense" });
+    }
+  });
+
+  // Expense Query Chat (Story 1-3)
+  app.post("/api/chat/expense-query", isAuthenticated, aiLimiter, async (req: any, res: Response) => {
+    try {
+      const { message } = req.body;
+      if (!message || typeof message !== "string" || message.trim().length === 0) {
+        return res.status(400).json({ error: "Message is required" });
+      }
+      const userId = req.user.claims.sub;
+
+      const [summary, monthlyComparison, categorySpending] = await Promise.all([
+        storage.getSummaryStats(userId),
+        storage.getMonthlyComparison(userId),
+        storage.getCategorySpending(userId),
+      ]);
+
+      const topCategories = categorySpending
+        .filter(c => c.total > 0)
+        .slice(0, 8)
+        .map(c => `${c.name}: ₱${c.total.toFixed(2)}`)
+        .join(", ");
+
+      const contextStr = `User's expense summary:
+- Total spending (all time): ₱${summary.totalSpending.toFixed(2)}
+- This month: ₱${monthlyComparison.currentMonth.toFixed(2)}
+- Last month: ₱${monthlyComparison.previousMonth.toFixed(2)} (${monthlyComparison.percentChange > 0 ? "+" : ""}${monthlyComparison.percentChange.toFixed(1)}% change)
+- Transaction count: ${summary.transactionCount}
+- Average per transaction: ₱${summary.avgPerTransaction.toFixed(2)}
+- Top categories: ${topCategories || "No data yet"}
+Today's date: ${new Date().toISOString().split("T")[0]}`;
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "system",
+            content: `You are a helpful personal finance assistant for an expense tracker app. Answer the user's questions about their spending using the provided context. Be concise, helpful, and specific with numbers. If the user asks about something not in the context, say you don't have enough data. Never make up numbers.`,
+          },
+          { role: "user", content: `Context:\n${contextStr}\n\nUser question: ${message.trim()}` },
+        ],
+        max_tokens: 400,
+        temperature: 0.3,
+      });
+
+      const reply = response.choices[0]?.message?.content || "I couldn't process your question. Please try again.";
+      res.json({ reply });
+    } catch (error) {
+      console.error("Error processing chat query:", error);
+      res.status(500).json({ error: "Failed to process query" });
     }
   });
 

@@ -1,0 +1,84 @@
+# Sprint Status - Receipt-Tracker Enhancement
+# Generated: 2026-02-18
+# Project: Receipt-Tracker
+# Project Key: NOKEY
+# Tracking System: file-system
+# Story Location: _bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created, ready for development
+#   - in-progress: Developer actively working on implementation
+#   - review: Implementation complete, ready for review
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Mark epic as 'in-progress' when starting work on its first story
+# - SM typically creates next story ONLY after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then Dev runs code-review (fresh context, ideally different LLM)
+# - Total Story Points: 86
+
+generated: 2026-02-18
+last_updated: 2026-02-21
+project: Receipt-Tracker
+project_key: NOKEY
+tracking_system: file-system
+story_location: "_bmad-output/implementation-artifacts"
+
+development_status:
+  # ============================================
+  # Epic 1: Conversational Expense Entry (21 pts)
+  # ============================================
+  epic-1: done
+  1-1-natural-language-expense-parsing: done         # 8 pts - POST /api/expenses/parse-natural (GPT-4o), NaturalLanguageExpenseInput component with voice (Web Speech API)
+  1-2-voice-to-expense-entry: done                   # 5 pts - Web Speech API mic button integrated into NaturalLanguageExpenseInput
+  1-3-expense-query-chat: done                       # 8 pts - POST /api/chat/expense-query (GPT-4o), ExpenseChat floating component in App layout
+  epic-1-retrospective: optional
+
+  # ============================================
+  # Epic 2: Savings Goals Tracker (13 pts)
+  # ============================================
+  epic-2: done
+  2-1-create-savings-goal: done                      # 5 pts - Full CRUD with icon/color/category linking
+  2-2-manual-goal-contributions: done                # 3 pts - goalContributions table, CRUD routes, Add Contribution dialog in Goals.tsx
+  2-3-visual-goal-progress: done                     # 5 pts - Milestone markers (25/50/75/100%), color transitions, "Completed!" badge, next milestone display
+  epic-2-retrospective: optional
+
+  # ============================================
+  # Epic 3: PWA with Offline Mode (21 pts)
+  # ============================================
+  epic-3: done
+  3-1-pwa-installation: done                         # 5 pts - manifest.json, service worker (sw.js), <link rel="manifest"> in index.html
+  3-2-offline-expense-entry: done                    # 8 pts - useOfflineQueue.ts hook with IndexedDB queue + background sync
+  3-3-offline-data-access: done                      # 8 pts - Service worker cache-first strategy for API responses in sw.js
+  epic-3-retrospective: optional
+
+  # ============================================
+  # Epic 4: Expense Splitting (13 pts)
+  # ============================================
+  epic-4: backlog
+  4-1-split-expense-with-contacts: ready-for-dev     # 5 pts - contacts table, expense_splits table, SplitSection in ExpenseForm
+  4-2-balance-summary-dashboard: ready-for-dev       # 5 pts - settlements table, Splits page, ContactBalanceCard, SettleUpDialog
+  4-3-split-settlement-notification: ready-for-dev   # 3 pts - reminder email template, rate limiting, SendReminderDialog
+  epic-4-retrospective: optional
+
+  # ============================================
+  # Epic 5: Achievement Badges & Streaks (18 pts)
+  # ============================================
+  epic-5: in-progress
+  5-1-logging-streak-tracker: done                   # 5 pts - userStreaks table, updateUserStreak logic (freeze support), StreakWidget on Dashboard
+  5-2-achievement-badge-system: done                 # 8 pts - userBadges table, 11 badge conditions, checkAndUnlockBadges, Badges page (/badges)
+  5-3-monthly-budget-score: ready-for-dev            # 5 pts - monthly_scores table, BudgetScoreWidget, score calculation, trend chart
+  epic-5-retrospective: optional

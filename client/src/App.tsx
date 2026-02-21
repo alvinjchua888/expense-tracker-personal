@@ -15,7 +15,10 @@ import Analytics from "@/pages/Analytics";
 import Categories from "@/pages/Categories";
 import AIRecommendations from "@/pages/AIRecommendations";
 import Budgets from "@/pages/Budgets";
+import Goals from "@/pages/Goals";
+import Badges from "@/pages/Badges";
 import RecurringExpenses from "@/pages/RecurringExpenses";
+import { ExpenseChat } from "@/components/ExpenseChat";
 import DigestSettings from "@/pages/DigestSettings";
 import Landing from "@/pages/Landing";
 import NotFound from "@/pages/not-found";
@@ -28,6 +31,8 @@ function AuthenticatedRoutes() {
       <Route path="/analytics" component={Analytics} />
       <Route path="/categories" component={Categories} />
       <Route path="/budgets" component={Budgets} />
+      <Route path="/goals" component={Goals} />
+      <Route path="/badges" component={Badges} />
       <Route path="/recurring-expenses" component={RecurringExpenses} />
       <Route path="/digest" component={DigestSettings} />
       <Route path="/ai-recommendations" component={AIRecommendations} />
@@ -77,6 +82,7 @@ function App() {
       <TooltipProvider>
         <CurrencyProvider>
           <MainApp />
+          <ExpenseChat />
         </CurrencyProvider>
         <Toaster />
       </TooltipProvider>

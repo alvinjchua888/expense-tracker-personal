@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { ExpenseList } from "@/components/ExpenseList";
 import { ExpenseForm } from "@/components/ExpenseForm";
 import { ReceiptUpload } from "@/components/ReceiptUpload";
+import { NaturalLanguageExpenseInput } from "@/components/NaturalLanguageExpenseInput";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { apiRequest, queryClient, invalidateExpenseRelatedQueries } from "@/lib/queryClient";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -222,6 +223,8 @@ export default function Expenses() {
           <ExpenseForm onSubmit={handleAddExpense} />
         </div>
       </div>
+
+      <NaturalLanguageExpenseInput categories={categories} />
 
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
