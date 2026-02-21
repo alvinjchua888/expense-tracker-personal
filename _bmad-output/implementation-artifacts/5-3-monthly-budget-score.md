@@ -1,6 +1,6 @@
 # Story 5.3: Monthly Budget Score
 
-**Status:** ready-for-dev  
+**Status:** done  
 **Epic:** 5 - Achievement Badges & Streaks  
 **Story Points:** 5  
 **Priority:** High (Completes Epic 5)

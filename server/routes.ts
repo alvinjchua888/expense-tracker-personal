@@ -406,6 +406,91 @@ export async function registerRoutes(
     }
   });
 
+  // Budget Score endpoints (Story 5-3)
+  app.get("/api/analytics/budget-score", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      const now = new Date();
+      const currentYear = now.getFullYear();
+      const currentMonth = now.getMonth() + 1;
+
+      // Get budgets, categories, and this month's expenses
+      const budgetsData = await storage.getBudgets(userId);
+      const categoriesData = await storage.getCategories(userId);
+
+      // Get expenses for current month
+      const startOfMonth = new Date(currentYear, currentMonth - 1, 1);
+      const endOfMonth = new Date(currentYear, currentMonth, 0, 23, 59, 59, 999);
+      const expensesData = await storage.getExpenses(userId, {
+        startDate: startOfMonth,
+        endDate: endOfMonth,
+      });
+
+      // Import and use the calculation function
+      const { calculateBudgetScore, getScoreColor } = await import("./budget-score");
+      const result = calculateBudgetScore(budgetsData, expensesData, categoriesData);
+
+      // Save/cache the score if we have budgets
+      if (budgetsData.length > 0) {
+        await storage.saveMonthlyScore({
+          userId,
+          year: currentYear,
+          month: currentMonth,
+          score: result.totalScore,
+          breakdown: result.breakdown,
+        });
+      }
+
+      // Get previous month's score for comparison
+      let previousMonth = currentMonth - 1;
+      let previousYear = currentYear;
+      if (previousMonth === 0) {
+        previousMonth = 12;
+        previousYear = currentYear - 1;
+      }
+      const previousScore = await storage.getMonthlyScore(userId, previousYear, previousMonth);
+
+      res.json({
+        currentMonth: {
+          year: currentYear,
+          month: currentMonth,
+          score: result.totalScore,
+          descriptor: result.descriptor,
+          descriptorEmoji: result.descriptorEmoji,
+          breakdown: result.breakdown,
+          color: getScoreColor(result.totalScore),
+        },
+        previousMonth: previousScore ? {
+          score: previousScore.score,
+          change: result.totalScore - previousScore.score,
+        } : null,
+      });
+    } catch (error) {
+      console.error("Error calculating budget score:", error);
+      res.status(500).json({ error: "Failed to calculate budget score" });
+    }
+  });
+
+  app.get("/api/analytics/budget-score/history", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      const months = parseInt(req.query.months as string) || 6;
+      const history = await storage.getMonthlyScoreHistory(userId, months);
+
+      res.json({
+        history: history.map(h => ({
+          year: h.year,
+          month: h.month,
+          score: h.score,
+          calculatedAt: h.calculatedAt,
+        })),
+      });
+    } catch (error) {
+      console.error("Error fetching budget score history:", error);
+      res.status(500).json({ error: "Failed to fetch budget score history" });
+    }
+  });
+
   const receiptScanSchema = z.object({
     image: z.string(),
   });

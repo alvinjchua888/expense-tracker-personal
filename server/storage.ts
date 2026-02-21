@@ -9,8 +9,9 @@ import {
   type GoalContribution, type InsertGoalContribution,
   type UserStreak,
   type UserBadge,
+  type MonthlyScore, type InsertMonthlyScore,
   users, categories, expenses, budgets, recurringExpenses, digestPreferences, savingsGoals,
-  goalContributions, userStreaks, userBadges
+  goalContributions, userStreaks, userBadges, monthlyScores
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, gte, lte, and, sql, or, ilike } from "drizzle-orm";
@@ -77,6 +78,11 @@ export interface IStorage {
   // Badges (Story 5-2)
   getUserBadges(userId: string): Promise<UserBadge[]>;
   checkAndUnlockBadges(userId: string): Promise<string[]>;
+
+  // Monthly Budget Scores (Story 5-3)
+  getMonthlyScore(userId: string, year: number, month: number): Promise<MonthlyScore | undefined>;
+  getMonthlyScoreHistory(userId: string, months: number): Promise<MonthlyScore[]>;
+  saveMonthlyScore(score: InsertMonthlyScore): Promise<MonthlyScore>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -882,6 +888,62 @@ export class DatabaseStorage implements IStorage {
     }
 
     return newBadges;
+  }
+
+  // Monthly Budget Score methods (Story 5-3)
+  async getMonthlyScore(userId: string, year: number, month: number): Promise<MonthlyScore | undefined> {
+    const [score] = await db
+      .select()
+      .from(monthlyScores)
+      .where(
+        and(
+          eq(monthlyScores.userId, userId),
+          eq(monthlyScores.year, year),
+          eq(monthlyScores.month, month)
+        )
+      );
+    return score || undefined;
+  }
+
+  async getMonthlyScoreHistory(userId: string, months: number): Promise<MonthlyScore[]> {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1;
+
+    // Calculate the start year/month for the history
+    let startYear = currentYear;
+    let startMonth = currentMonth - months + 1;
+    while (startMonth <= 0) {
+      startMonth += 12;
+      startYear -= 1;
+    }
+
+    return db
+      .select()
+      .from(monthlyScores)
+      .where(
+        and(
+          eq(monthlyScores.userId, userId),
+          sql`(${monthlyScores.year} > ${startYear} OR (${monthlyScores.year} = ${startYear} AND ${monthlyScores.month} >= ${startMonth}))`
+        )
+      )
+      .orderBy(monthlyScores.year, monthlyScores.month);
+  }
+
+  async saveMonthlyScore(score: InsertMonthlyScore): Promise<MonthlyScore> {
+    const [saved] = await db
+      .insert(monthlyScores)
+      .values(score)
+      .onConflictDoUpdate({
+        target: [monthlyScores.userId, monthlyScores.year, monthlyScores.month],
+        set: {
+          score: score.score,
+          breakdown: score.breakdown,
+          calculatedAt: sql`CURRENT_TIMESTAMP`,
+        },
+      })
+      .returning();
+    return saved;
   }
 }
 

@@ -77,8 +77,8 @@ development_status:
   # ============================================
   # Epic 5: Achievement Badges & Streaks (18 pts)
   # ============================================
-  epic-5: in-progress
+  epic-5: done
   5-1-logging-streak-tracker: done                   # 5 pts - userStreaks table, updateUserStreak logic (freeze support), StreakWidget on Dashboard
   5-2-achievement-badge-system: done                 # 8 pts - userBadges table, 11 badge conditions, checkAndUnlockBadges, Badges page (/badges)
-  5-3-monthly-budget-score: ready-for-dev            # 5 pts - monthly_scores table, BudgetScoreWidget, score calculation, trend chart
+  5-3-monthly-budget-score: done                     # 5 pts - monthly_scores table, BudgetScoreWidget, score calculation, trend chart
   epic-5-retrospective: optional

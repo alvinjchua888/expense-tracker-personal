@@ -15,6 +15,7 @@ import Analytics from "@/pages/Analytics";
 import Categories from "@/pages/Categories";
 import AIRecommendations from "@/pages/AIRecommendations";
 import Budgets from "@/pages/Budgets";
+import BudgetScore from "@/pages/BudgetScore";
 import Goals from "@/pages/Goals";
 import Badges from "@/pages/Badges";
 import RecurringExpenses from "@/pages/RecurringExpenses";
@@ -31,6 +32,7 @@ function AuthenticatedRoutes() {
       <Route path="/analytics" component={Analytics} />
       <Route path="/categories" component={Categories} />
       <Route path="/budgets" component={Budgets} />
+      <Route path="/budget-score" component={BudgetScore} />
       <Route path="/goals" component={Goals} />
       <Route path="/badges" component={Badges} />
       <Route path="/recurring-expenses" component={RecurringExpenses} />

@@ -259,4 +259,38 @@ export const userBadges = pgTable("user_badges", {
 
 export type UserBadge = typeof userBadges.$inferSelect;
 
+// Monthly Budget Scores table (Story 5-3)
+export const monthlyScores = pgTable("monthly_scores", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  year: integer("year").notNull(),
+  month: integer("month").notNull(), // 1-12
+  score: real("score").notNull(),
+  breakdown: jsonb("breakdown").notNull(), // Array of category scores
+  calculatedAt: timestamp("calculated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+}, (table) => [unique("monthly_scores_user_month_unique").on(table.userId, table.year, table.month)]);
+
+export const insertMonthlyScoreSchema = createInsertSchema(monthlyScores).omit({
+  id: true,
+  calculatedAt: true,
+}).extend({
+  score: z.number().min(0).max(100),
+  year: z.number().int().min(2020).max(2100),
+  month: z.number().int().min(1).max(12),
+});
+
+export type InsertMonthlyScore = z.infer<typeof insertMonthlyScoreSchema>;
+export type MonthlyScore = typeof monthlyScores.$inferSelect;
+
+// Budget Score breakdown type for JSONB storage
+export interface CategoryScoreBreakdown {
+  categoryId: number;
+  categoryName: string;
+  categoryIcon: string;
+  budget: number;
+  spent: number;
+  score: number;
+  weight: number;
+}
+
 export * from "./models/chat";

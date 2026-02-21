@@ -6,6 +6,7 @@ import { ExpenseList } from "@/components/ExpenseList";
 import { ExpenseForm } from "@/components/ExpenseForm";
 import { ReceiptUpload } from "@/components/ReceiptUpload";
 import { StreakWidget } from "@/components/StreakWidget";
+import { BudgetScoreWidget } from "@/components/BudgetScoreWidget";
 import { apiRequest, queryClient, invalidateExpenseRelatedQueries } from "@/lib/queryClient";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCurrency } from "@/hooks/useCurrency";
@@ -210,7 +211,10 @@ export default function Dashboard() {
         )}
       </div>
 
-      <StreakWidget className="md:max-w-sm" />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <StreakWidget />
+        <BudgetScoreWidget />
+      </div>
 
       {expensesLoading ? (
         <div className="space-y-2">
